@@ -1,0 +1,78 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+    <style>
+        .application-area {
+            display: flex;
+            min-height: 100vh;
+            flex-direction: column;
+        }
+
+        .app-content {
+            flex: 1;
+        }
+
+        .spaced-out {
+            margin: 2em;
+            border: 2em;
+        }
+
+        fieldset {
+            border: 0;
+        }
+
+        .noselect {
+            -webkit-touch-callout: none;
+            /* iOS Safari */
+            -webkit-user-select: none;
+            /* Safari */
+            -khtml-user-select: none;
+            /* Konqueror HTML */
+            -moz-user-select: none;
+            /* Firefox */
+            -ms-user-select: none;
+            /* Internet Explorer/Edge */
+            user-select: none;
+            /* Non-prefixed version, currently supported by Chrome and Opera */
+        }
+
+        .button.invisible {
+            border-color: transparent;
+        }
+        .button.invisible.no-text {
+            color: transparent;
+        }
+        
+        html {
+            overflow-y: hidden !important;
+        }
+    </style>
+    <meta charset="UTF-8">
+    <link rel="icon" type="image/png" href="/static/favicon.png">
+    <link rel="apple-touch-icon" type="image/png" href="/static/favicon.png">
+    <link rel="apple-touch-startup-image" type="image/png" href="/static/favicon.png">
+    <title>Network Addon Mod Installer</title>
+    <script type="text/javascript" src="/static/main.js"></script>
+    <link rel="stylesheet" href="/static/bulma.css" />
+    <script>
+        window.addEventListener('load', () => {
+            let appnode = document.querySelector("#application");
+            let app = Elm.Main.init(
+                {
+                    node: appnode,
+                    flags:
+                    {
+                        rust_version: "{{rust_version}}",
+                        current_date: new Date().toISOString()
+                    }
+                }
+            );
+        })
+    </script>
+</head>
+
+<body class="application-area" id="application" class="spaced-out">
+</body>
+
+</html>

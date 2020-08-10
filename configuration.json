@@ -1,0 +1,6 @@
+{
+    "title": "Network Addon Mod",
+    "version": 39,
+    "web_server_port": 38383,
+    "files_location": "installation"
+}
