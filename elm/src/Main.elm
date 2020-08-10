@@ -63,7 +63,7 @@ type Msg
     | AddCheckOptionWithChildren ( String, String, List OptionNode )
     | AddRadioOption ( String, String )
     | RemoveOption String
-    | RemoveOptionWithChildren ( String, List OptionNode )
+    | RemoveOptionWithChildren ( String, String, List OptionNode )
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -235,12 +235,13 @@ update message model =
         RemoveOption id ->
             ( { model | select_list = LExtra.remove id model.select_list |> LExtra.unique }, Cmd.none )
 
-        RemoveOptionWithChildren ( id, children ) ->
+        RemoveOptionWithChildren ( parent, name, children ) ->
             let
                 new_select_list =
                     removeOptionsRecursively children model.select_list
-                        |> LExtra.remove id
+                        |> LExtra.remove (parent ++ "/" ++ name)
                         |> LExtra.unique
+                        |> LExtra.remove parent
             in
             ( { model | select_list = new_select_list }, Cmd.none )
 
@@ -266,8 +267,10 @@ update message model =
 addOptionsRecursively : List OptionNode -> List String -> List String
 addOptionsRecursively options current =
     List.append current
-        (List.map (\i -> i.parent ++ "/" ++ i.name) options
-            ++ (List.map (\c -> getParents c.children) options |> List.concat)
+        (List.map
+            (\i -> i.parent ++ "/" ++ i.name)
+            options
+            ++ (List.map (\c -> addOptionsRecursively (unwrapInstallerOption c.children) current) options |> List.concat)
         )
 
 
@@ -276,7 +279,7 @@ removeOptionsRecursively options current =
     let
         to_remove =
             List.map (\i -> i.parent ++ "/" ++ i.name) options
-                ++ (List.map (\c -> getParents c.children) options |> List.concat)
+                ++ (List.map (\c -> getId c.children) options |> List.concat)
     in
     List.filter (\c -> not <| List.member c to_remove) current
 
@@ -296,6 +299,13 @@ getParents option =
     LExtra.unique
         (List.map .parent (unwrapInstallerOption option) |> List.filter (\item -> List.length (String.split "/" item) > 1))
         ++ (List.map (\c -> getParents c.children) (unwrapInstallerOption option) |> List.concat)
+
+
+getId : InstallerOption -> List String
+getId option =
+    LExtra.unique
+        (List.map (\i -> i.parent ++ "/" ++ i.name) (unwrapInstallerOption option))
+        ++ (List.map (\c -> getId c.children) (unwrapInstallerOption option) |> List.concat)
 
 
 getSelected : InstallerOption -> List String
@@ -426,13 +436,13 @@ displayOptions model option =
                     radioFolder option
 
                 ( Checked, False ) ->
-                    uncheckedBox model option
+                    uncheckedBox option
 
                 ( Checked, True ) ->
                     checkedBox option
 
                 ( Unchecked, False ) ->
-                    uncheckedBox model option
+                    uncheckedBox option
 
                 ( Unchecked, True ) ->
                     checkedBox option
@@ -484,7 +494,7 @@ radioUnchecked option =
 radioChecked : OptionNode -> Html Msg
 radioChecked option =
     td [ style "vertical-align" "middle" ]
-        [ input [ style "transform" "scale(1.5)", type_ "radio", attribute "checked" "", name <| String.fromInt option.depth ++ "_" ++ option.parent ] [] ]
+        [ input [ style "transform" "scale(1.5)", type_ "radio", checked True, name <| String.fromInt option.depth ++ "_" ++ option.parent ] [] ]
 
 
 radioFolder : OptionNode -> Html Msg
@@ -504,8 +514,8 @@ checkedBox option =
             [ input
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
-                , attribute "checked" ""
-                , onClick (RemoveOptionWithChildren ( option.parent ++ "/" ++ option.name, children ))
+                , checked True
+                , onClick (RemoveOptionWithChildren ( option.parent, option.name, children ))
                 ]
                 []
             ]
@@ -515,26 +525,16 @@ checkedBox option =
             [ input
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
-                , attribute "checked" ""
+                , checked True
                 , onClick (RemoveOption (option.parent ++ "/" ++ option.name))
                 ]
                 []
             ]
 
 
-uncheckedBox : Model -> OptionNode -> Html Msg
-uncheckedBox model option =
+uncheckedBox : OptionNode -> Html Msg
+uncheckedBox option =
     let
-        closest_parent =
-            getClosestParent option.parent
-
-        chkd =
-            if List.member closest_parent (List.map getClosestParent model.select_list) then
-                attribute "checked" ""
-
-            else
-                class ""
-
         children =
             unwrapInstallerOption option.children
     in
@@ -543,7 +543,6 @@ uncheckedBox model option =
             [ input
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
-                , chkd
                 , onClick
                     (AddCheckOptionWithChildren
                         ( option.parent
@@ -560,7 +559,6 @@ uncheckedBox model option =
             [ input
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
-                , chkd
                 , onClick (AddCheckOption ( option.parent, option.name ))
                 ]
                 []
@@ -570,7 +568,7 @@ uncheckedBox model option =
 locked : OptionNode -> Html Msg
 locked _ =
     td [ style "vertical-align" "middle" ]
-        [ input [ style "transform" "scale(1.5)", type_ "checkbox", attribute "checked" "", disabled True ] [] ]
+        [ input [ style "transform" "scale(1.5)", type_ "checkbox", checked True, disabled True ] [] ]
 
 
 parentLocked : Model -> OptionNode -> Html Msg
@@ -581,7 +579,7 @@ parentLocked model option =
 
         chkd =
             if List.member closest_parent (List.map getClosestParent model.select_list) then
-                attribute "checked" ""
+                checked True
 
             else
                 class ""

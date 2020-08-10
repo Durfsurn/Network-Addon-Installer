@@ -36,8 +36,6 @@ async fn main() -> anyhow::Result<()> {
     
     let folder_structure = [folder_structure(&config.files_location)?].to_vec();
 
-    // fs::write("structure.json", serde_json::to_string_pretty(&folder_structure)?)?;
-
     info!("{:#?}", config);
     info!("App version: {:#?}", config.rust_version);
 
