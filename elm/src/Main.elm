@@ -1,8 +1,6 @@
 module Main exposing (main)
 
 import Browser exposing (..)
-import Browser.Navigation as Nav
-import Date
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
@@ -13,9 +11,6 @@ import Json.Encode as Encode
 import List
 import List.Extra as LExtra
 import RemoteData exposing (WebData)
-import Url
-import Url.Parser as Parser exposing ((</>))
-import Url.Parser.Query as Query
 
 
 type ExpandCollapse
@@ -38,19 +33,34 @@ main =
         }
 
 
+type State
+    = Default
+    | CheckedExe
+    | PatchedExe
+
+
 type alias Flags =
     { rust_version : String
+    , windows : String
     , current_date : String
     }
 
 
 type alias Model =
     { flags : Flags
+    , state : State
     , installer_options : WebData InstallerOption
     , hide_list : List String
     , locked_options : List String
     , select_list : List String
     , selected : String
+    , docs : String
+    , image : String
+    , modal : Bool
+    , modal_text : String
+    , loading : Bool
+    , sc4_location : String
+    , sc4_location_option : String
     }
 
 
@@ -64,16 +74,32 @@ type Msg
     | AddRadioOption ( String, String )
     | RemoveOption String
     | RemoveOptionWithChildren ( String, String, List OptionNode )
+    | ReceiveDocs (WebData String)
+    | ChangeLocationOption String
+    | ChangeExePath String
+    | CheckExePath
+    | GotExePathStatus (WebData ExeResponse)
+    | GotExePatchStatus (WebData PatchResponse)
+    | HideModal
+    | PatchExe
 
 
 init : Flags -> ( Model, Cmd Msg )
 init flags =
     ( { flags = flags
+      , state = Default
+      , loading = False
+      , modal = False
+      , modal_text = ""
       , installer_options = RemoteData.Loading
       , locked_options = []
       , hide_list = []
       , select_list = []
       , selected = ""
+      , docs = ""
+      , image = "NAM"
+      , sc4_location = "C:/Program Files/Steam/steamapps/common/SimCity 4 Deluxe/Apps/SimCity 4.exe"
+      , sc4_location_option = "Steam"
       }
     , fetchStructure
     )
@@ -94,6 +120,14 @@ fetchStructure =
     Http.get
         { url = "/structure"
         , expect = Http.expectJson (RemoteData.fromResult >> ReceiveStructure) decodeInstallerOption
+        }
+
+
+fetchDocs : String -> Cmd Msg
+fetchDocs id =
+    Http.get
+        { url = String.replace "/" "%2F" id |> String.replace "top%2F" "docs/"
+        , expect = Http.expectString (RemoteData.fromResult >> ReceiveDocs)
         }
 
 
@@ -129,29 +163,24 @@ radioCheckFromString =
             )
 
 
-radioCheckToString : RadioCheck -> String
-radioCheckToString rc =
-    case rc of
-        Radio ->
-            "Radio"
 
-        RadioChecked ->
-            "RadioChecked"
-
-        RadioFolder ->
-            "RadioFolder"
-
-        Checked ->
-            "Checked"
-
-        Locked ->
-            "Locked"
-
-        Unchecked ->
-            "Unchecked"
-
-        ParentLocked ->
-            "ParentLocked"
+-- radioCheckToString : RadioCheck -> String
+-- radioCheckToString rc =
+--     case rc of
+--         Radio ->
+--             "Radio"
+--         RadioChecked ->
+--             "RadioChecked"
+--         RadioFolder ->
+--             "RadioFolder"
+--         Checked ->
+--             "Checked"
+--         Locked ->
+--             "Locked"
+--         Unchecked ->
+--             "Unchecked"
+--         ParentLocked ->
+--             "ParentLocked"
 
 
 type alias OptionNode =
@@ -167,9 +196,10 @@ type InstallerOption
     = InstallerOption (List OptionNode)
 
 
-defInstallerOption : InstallerOption
-defInstallerOption =
-    InstallerOption []
+
+-- defInstallerOption : InstallerOption
+-- defInstallerOption =
+--     InstallerOption []
 
 
 decodeOptionNode : Decoder OptionNode
@@ -201,8 +231,65 @@ update message model =
                 Collapse ->
                     ( { model | hide_list = id :: model.hide_list }, Cmd.none )
 
+        HideModal ->
+            ( { model | modal = False }, Cmd.none )
+
         SelectDocs id ->
-            ( { model | selected = id }, Cmd.none )
+            ( { model | selected = id }, fetchDocs id )
+
+        ChangeExePath path ->
+            ( { model | sc4_location = path }, Cmd.none )
+
+        CheckExePath ->
+            ( { model | loading = True }, checkExePath model.sc4_location )
+
+        PatchExe ->
+            ( { model | loading = True }, patchExe model.sc4_location )
+
+        ChangeLocationOption option ->
+            let
+                path =
+                    case option of
+                        "GOG" ->
+                            "C:/GOG Games/SimCity 4 Deluxe Edition/Apps"
+
+                        "Disc" ->
+                            "C:/Program Files (x86)/Maxis/SimCity 4 Deluxe/Apps"
+
+                        _ ->
+                            "C:/Program Files/Steam/steamapps/common/SimCity 4 Deluxe/Apps/SimCity 4.exe"
+            in
+            ( { model | sc4_location_option = option, sc4_location = path }, Cmd.none )
+
+        GotExePathStatus resp ->
+            case resp of
+                RemoteData.Success r ->
+                    if r.valid then
+                        ( { model | state = CheckedExe, loading = False }, Cmd.none )
+
+                    else if String.length r.version < 10 then
+                        ( { model | modal = True, loading = False, modal_text = "Your version of SimCity 4 is " ++ r.version ++ ". It must be 1.1.638.0 or higher." }, Cmd.none )
+
+                    else
+                        ( { model | modal = True, loading = False, modal_text = "Check your path of SimCity 4, the executable could not be found." }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        GotExePatchStatus resp ->
+            case resp of
+                RemoteData.Success r ->
+                    if r.patched then
+                        ( { model | state = PatchedExe, loading = False }, Cmd.none )
+
+                    else
+                        ( { model | modal = True, loading = False, modal_text = "Check your path of SimCity 4, the executable could not be found and/or the 4gb+patch failed." }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+        ReceiveDocs string ->
+            ( { model | docs = RemoteData.unwrap "" identity string }, Cmd.none )
 
         AddCheckOption ( parent, name ) ->
             ( { model | select_list = (parent ++ "/" ++ name) :: model.select_list |> LExtra.unique }, Cmd.none )
@@ -262,6 +349,48 @@ update message model =
 
                 _ ->
                     ( { model | installer_options = res }, Cmd.none )
+
+
+checkExePath : String -> Cmd Msg
+checkExePath path =
+    Http.post
+        { url = "check_path"
+        , body = Http.jsonBody <| Encode.string path
+        , expect = Http.expectJson (RemoteData.fromResult >> GotExePathStatus) decodeExeResponse
+        }
+
+
+patchExe : String -> Cmd Msg
+patchExe path =
+    Http.post
+        { url = "patch_exe"
+        , body = Http.jsonBody <| Encode.string path
+        , expect = Http.expectJson (RemoteData.fromResult >> GotExePatchStatus) decodePatchResponse
+        }
+
+
+type alias ExeResponse =
+    { version : String
+    , valid : Bool
+    }
+
+
+decodeExeResponse : Decoder ExeResponse
+decodeExeResponse =
+    Decode.succeed ExeResponse
+        |> JsonP.required "version" Decode.string
+        |> JsonP.required "valid" Decode.bool
+
+
+type alias PatchResponse =
+    { patched : Bool
+    }
+
+
+decodePatchResponse : Decoder PatchResponse
+decodePatchResponse =
+    Decode.succeed PatchResponse
+        |> JsonP.required "patched" Decode.bool
 
 
 addOptionsRecursively : List OptionNode -> List String -> List String
@@ -343,10 +472,98 @@ displayInstaller model =
         [ div [ style "padding" "15px" ]
             [ h3 [ class "title is-3" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ]
             , br [] []
+            , if model.flags.windows == "true" then
+                div []
+                    [ div [ class "columns" ]
+                        [ div [ class "column is-narrow" ]
+                            [ label [ class "label" ] [ text "Steam" ]
+                            , input
+                                [ onClick (ChangeLocationOption "Steam")
+                                , disabled (model.state /= Default)
+                                , style "margin-left" "35%"
+                                , type_ "radio"
+                                , name "location"
+                                , checked ("Steam" == model.sc4_location_option)
+                                ]
+                                []
+                            ]
+                        , div [ class "column is-narrow" ]
+                            [ label [ class "label" ] [ text "GOG" ]
+                            , input
+                                [ onClick (ChangeLocationOption "GOG")
+                                , disabled (model.state /= Default)
+                                , style "margin-left" "33%"
+                                , type_ "radio"
+                                , name "location"
+                                , checked ("GOG" == model.sc4_location_option)
+                                ]
+                                []
+                            ]
+                        , div [ class "column is-narrow" ]
+                            [ label [ class "label" ] [ text "Disc" ]
+                            , input
+                                [ onClick (ChangeLocationOption "Disc")
+                                , disabled (model.state /= Default)
+                                , style "margin-left" "33%"
+                                , type_ "radio"
+                                , name "location"
+                                , checked ("Disc" == model.sc4_location_option)
+                                ]
+                                []
+                            ]
+                        ]
+                    , div [ class "buttons has-addons columns" ]
+                        [ div [ class "column is-5" ]
+                            [ input
+                                [ type_ "text"
+                                , class "input"
+                                , value model.sc4_location
+                                , onInput ChangeExePath
+                                , disabled (model.state /= Default)
+                                ]
+                                []
+                            ]
+                        , div [ class "column is-narrow" ]
+                            [ button
+                                [ class "button is-success"
+                                , class <|
+                                    if model.loading then
+                                        "is-loading"
+
+                                    else
+                                        ""
+                                , style "margin-bottom" "0rem"
+                                , onClick CheckExePath
+                                , disabled (model.state /= Default)
+                                ]
+                                [ text "Check SimCity 4 Executable Location" ]
+                            ]
+                        ]
+                    , div [ class "" ]
+                        [ button
+                            [ class "button is-link"
+                            , style "margin-bottom" "0rem"
+                            , class <|
+                                if model.loading then
+                                    "is-loading"
+
+                                else
+                                    ""
+                            , onClick PatchExe
+                            , disabled (model.state /= CheckedExe)
+                            ]
+                            [ text "Patch SimCity 4 Executable at Location" ]
+                        ]
+                    ]
+
+              else
+                div [] []
+            , br [] []
+            , br [] []
             , div [ class "columns" ]
                 [ case model.installer_options of
                     RemoteData.Success opts ->
-                        div [ class "is-half", style "max-height" "90vh", style "overflow-y" "auto", style "min-height" "90vh", style "width" "50vw" ]
+                        div [ class "is-half", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
                             (List.concat <|
                                 List.map (displayOptions model) <|
                                     unwrapInstallerOption opts
@@ -378,9 +595,28 @@ displayInstaller model =
                                         "Timeout"
                         in
                         div [] [ text err ]
-                , div [ class "is-half", style "max-height" "90vh", style "overflow-y" "auto", style "min-height" "90vh", style "width" "50vw" ] <| List.map (\s -> tr [] [ text s ]) <| List.sort <| model.locked_options ++ model.select_list
+                , div [ class "is-half tile is-ancestor", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
+                    [ div [ class "tile is-vertical" ]
+                        [ div [ class "tile is-child" ] [ p [] [ text model.docs ] ]
+                        , div [ class "tile is-child" ] [ img [ src ("images/" ++ model.image ++ ".png") ] [] ]
+                        ]
+                    ]
                 ]
             ]
+        , if model.modal then
+            div [ class "modal is-active" ]
+                [ div [ class "modal-background" ]
+                    []
+                , div [ class "modal-card" ]
+                    [ section [ class "modal-card-body" ]
+                        [ text model.modal_text
+                        ]
+                    , button [ class "modal-close is-large", onClick HideModal ] []
+                    ]
+                ]
+
+          else
+            div [] []
         ]
 
 
@@ -412,40 +648,52 @@ displayOptions model option =
                     InstallerOption list ->
                         if List.length list > 0 then
                             if List.member (option.parent ++ "/" ++ option.name) model.hide_list then
-                                [ button [ class "button is-small is-outlined", onClick (ToggleExpand Expand (option.parent ++ "/" ++ option.name)) ] [ text "＋" ] ]
+                                [ button
+                                    [ class "button is-small is-outlined"
+                                    , disabled (model.state /= PatchedExe)
+                                    , onClick (ToggleExpand Expand (option.parent ++ "/" ++ option.name))
+                                    ]
+                                    [ text "＋" ]
+                                ]
 
                             else
-                                [ button [ class "button is-small is-outlined", onClick (ToggleExpand Collapse (option.parent ++ "/" ++ option.name)) ] [ text "－" ] ]
+                                [ button
+                                    [ class "button is-small is-outlined"
+                                    , disabled (model.state /= PatchedExe)
+                                    , onClick (ToggleExpand Collapse (option.parent ++ "/" ++ option.name))
+                                    ]
+                                    [ text "－" ]
+                                ]
 
                         else
                             [ button [ class "button is-small is-outlined invisible no-text" ] [ text "＋" ] ]
             , case ( option.radio_check, List.member (option.parent ++ "/" ++ option.name) model.select_list ) of
                 ( Radio, False ) ->
-                    radioUnchecked option
+                    radioUnchecked model option
 
                 ( Radio, True ) ->
-                    radioChecked option
+                    radioChecked model option
 
                 ( RadioChecked, False ) ->
-                    radioUnchecked option
+                    radioUnchecked model option
 
                 ( RadioChecked, True ) ->
-                    radioChecked option
+                    radioChecked model option
 
                 ( RadioFolder, _ ) ->
                     radioFolder option
 
                 ( Checked, False ) ->
-                    uncheckedBox option
+                    uncheckedBox model option
 
                 ( Checked, True ) ->
-                    checkedBox option
+                    checkedBox model option
 
                 ( Unchecked, False ) ->
-                    uncheckedBox option
+                    uncheckedBox model option
 
                 ( Unchecked, True ) ->
-                    checkedBox option
+                    checkedBox model option
 
                 ( Locked, _ ) ->
                     locked option
@@ -478,12 +726,13 @@ displayOptions model option =
     ]
 
 
-radioUnchecked : OptionNode -> Html Msg
-radioUnchecked option =
+radioUnchecked : Model -> OptionNode -> Html Msg
+radioUnchecked model option =
     td [ style "vertical-align" "middle" ]
         [ input
             [ style "transform" "scale(1.5)"
             , type_ "radio"
+            , disabled (model.state /= PatchedExe)
             , name <| String.fromInt option.depth ++ "_" ++ option.parent
             , onClick (AddRadioOption ( option.parent, option.name ))
             ]
@@ -491,10 +740,18 @@ radioUnchecked option =
         ]
 
 
-radioChecked : OptionNode -> Html Msg
-radioChecked option =
+radioChecked : Model -> OptionNode -> Html Msg
+radioChecked model option =
     td [ style "vertical-align" "middle" ]
-        [ input [ style "transform" "scale(1.5)", type_ "radio", checked True, name <| String.fromInt option.depth ++ "_" ++ option.parent ] [] ]
+        [ input
+            [ style "transform" "scale(1.5)"
+            , type_ "radio"
+            , disabled (model.state /= PatchedExe)
+            , checked True
+            , name <| String.fromInt option.depth ++ "_" ++ option.parent
+            ]
+            []
+        ]
 
 
 radioFolder : OptionNode -> Html Msg
@@ -503,8 +760,8 @@ radioFolder _ =
         [ input [ style "transform" "scale(1.5)", type_ "radio", disabled True ] [] ]
 
 
-checkedBox : OptionNode -> Html Msg
-checkedBox option =
+checkedBox : Model -> OptionNode -> Html Msg
+checkedBox model option =
     let
         children =
             unwrapInstallerOption option.children
@@ -515,6 +772,7 @@ checkedBox option =
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
                 , checked True
+                , disabled (model.state /= PatchedExe)
                 , onClick (RemoveOptionWithChildren ( option.parent, option.name, children ))
                 ]
                 []
@@ -526,14 +784,15 @@ checkedBox option =
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
                 , checked True
+                , disabled (model.state /= PatchedExe)
                 , onClick (RemoveOption (option.parent ++ "/" ++ option.name))
                 ]
                 []
             ]
 
 
-uncheckedBox : OptionNode -> Html Msg
-uncheckedBox option =
+uncheckedBox : Model -> OptionNode -> Html Msg
+uncheckedBox model option =
     let
         children =
             unwrapInstallerOption option.children
@@ -543,6 +802,7 @@ uncheckedBox option =
             [ input
                 [ style "transform" "scale(1.5)"
                 , type_ "checkbox"
+                , disabled (model.state /= PatchedExe)
                 , onClick
                     (AddCheckOptionWithChildren
                         ( option.parent
