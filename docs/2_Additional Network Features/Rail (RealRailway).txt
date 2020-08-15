@@ -1,0 +1,1 @@
+Installs options for the Rail network.  The NAM uses the RealRailway (RRW) standard as the default.  The original Maxis Rail is no longer supported or maintained by the NAM Team.  (Legacy support for Maxis Rail available separately.)

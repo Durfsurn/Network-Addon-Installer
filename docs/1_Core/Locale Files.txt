@@ -1,0 +1,1 @@
+Installs language text for in-game menus and tooltips

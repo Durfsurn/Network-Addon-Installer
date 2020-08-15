@@ -1,0 +1,1 @@
+Installs the wider RealHighway C-Type ("Combined") networks, occupying 3-tile width for a full dual carriageway (RHW-6C, RHW-8C).

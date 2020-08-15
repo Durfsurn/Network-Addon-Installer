@@ -1,0 +1,1 @@
+Installs a Regional Transport View plugin capable of showing RealHighway networks on the Regional Transport View.  Note that in order for the proper colors to show up, a DataView MUST BE LOADED in each city prior to saving, or else all networks will appear black on the Regional Transport View.

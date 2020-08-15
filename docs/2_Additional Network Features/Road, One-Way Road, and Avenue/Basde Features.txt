@@ -1,0 +1,1 @@
+Installs the base additions to the Road, One-Way Road, and Avenue networks, including Roundabouts, Wide-Radius/Multi-Radius Curves, and Fractional Angle functionality.

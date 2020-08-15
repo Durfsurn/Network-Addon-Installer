@@ -242,6 +242,12 @@ async fn patch_exe_windows(path: String) -> Result<impl warp::Reply> {
 async fn load_local_file(file_name: String) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
     let name = format!("{}.txt", name);
+    let name = if name.starts_with("/") {
+        name[1..].to_string()
+    }
+    else {
+        name
+    };
     
     info!("Loading {}", name);
 
@@ -256,8 +262,14 @@ async fn load_local_file(file_name: String) -> Result<impl warp::Reply> {
     let str_f = String::from_utf8_lossy(f.as_ref()).to_string();
     Ok(str_f)
 }
-async fn load_local_image(file_name: String)  -> Result<impl warp::Reply> {
+async fn load_local_image(file_name: String) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
+    let name = if name.starts_with("/") {
+        name[1..].to_string()
+    }
+    else {
+        name
+    };
 
     info!("Loading {}", name);
 

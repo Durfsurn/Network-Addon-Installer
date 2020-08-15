@@ -35,6 +35,7 @@ main =
 
 type State
     = Default
+    | TCAccept
     | CheckedExe
     | PatchedExe
 
@@ -61,6 +62,7 @@ type alias Model =
     , loading : Bool
     , sc4_location : String
     , sc4_location_option : String
+    , tc : Bool
     }
 
 
@@ -81,7 +83,9 @@ type Msg
     | GotExePathStatus (WebData ExeResponse)
     | GotExePatchStatus (WebData PatchResponse)
     | HideModal
+    | AcceptTC
     | PatchExe
+    | ImageError
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -97,9 +101,10 @@ init flags =
       , select_list = []
       , selected = ""
       , docs = ""
-      , image = "NAM"
+      , image = "Network Addon Mod"
       , sc4_location = "C:/Program Files/Steam/steamapps/common/SimCity 4 Deluxe/Apps/SimCity 4.exe"
       , sc4_location_option = "Steam"
+      , tc = False
       }
     , fetchStructure
     )
@@ -126,7 +131,7 @@ fetchStructure =
 fetchDocs : String -> Cmd Msg
 fetchDocs id =
     Http.get
-        { url = String.replace "/" "%2F" id |> String.replace "top%2F" "docs/"
+        { url = "docs/" ++ (String.replace "/" "%2F" id |> String.replace "top%2F" "")
         , expect = Http.expectString (RemoteData.fromResult >> ReceiveDocs)
         }
 
@@ -234,8 +239,24 @@ update message model =
         HideModal ->
             ( { model | modal = False }, Cmd.none )
 
+        AcceptTC ->
+            ( { model
+                | tc = True
+                , state =
+                    if model.flags.windows == "true" then
+                        TCAccept
+
+                    else
+                        PatchedExe
+              }
+            , Cmd.none
+            )
+
         SelectDocs id ->
-            ( { model | selected = id }, fetchDocs id )
+            ( { model | selected = id, image = id }, fetchDocs id )
+
+        ImageError ->
+            ( { model | image = "Network Addon Mod" }, Cmd.none )
 
         ChangeExePath path ->
             ( { model | sc4_location = path }, Cmd.none )
@@ -470,7 +491,7 @@ displayInstaller : Model -> Html Msg
 displayInstaller model =
     div [ class "application-area" ]
         [ div [ style "padding" "15px" ]
-            [ h3 [ class "title is-3" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ]
+            [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ]
             , br [] []
             , if model.flags.windows == "true" then
                 div []
@@ -479,7 +500,7 @@ displayInstaller model =
                             [ label [ class "label" ] [ text "Steam" ]
                             , input
                                 [ onClick (ChangeLocationOption "Steam")
-                                , disabled (model.state /= Default)
+                                , disabled (model.state /= TCAccept)
                                 , style "margin-left" "35%"
                                 , type_ "radio"
                                 , name "location"
@@ -491,7 +512,7 @@ displayInstaller model =
                             [ label [ class "label" ] [ text "GOG" ]
                             , input
                                 [ onClick (ChangeLocationOption "GOG")
-                                , disabled (model.state /= Default)
+                                , disabled (model.state /= TCAccept)
                                 , style "margin-left" "33%"
                                 , type_ "radio"
                                 , name "location"
@@ -503,7 +524,7 @@ displayInstaller model =
                             [ label [ class "label" ] [ text "Disc" ]
                             , input
                                 [ onClick (ChangeLocationOption "Disc")
-                                , disabled (model.state /= Default)
+                                , disabled (model.state /= TCAccept)
                                 , style "margin-left" "33%"
                                 , type_ "radio"
                                 , name "location"
@@ -519,7 +540,7 @@ displayInstaller model =
                                 , class "input"
                                 , value model.sc4_location
                                 , onInput ChangeExePath
-                                , disabled (model.state /= Default)
+                                , disabled (model.state /= TCAccept)
                                 ]
                                 []
                             ]
@@ -534,7 +555,7 @@ displayInstaller model =
                                         ""
                                 , style "margin-bottom" "0rem"
                                 , onClick CheckExePath
-                                , disabled (model.state /= Default)
+                                , disabled (model.state /= TCAccept)
                                 ]
                                 [ text "Check SimCity 4 Executable Location" ]
                             ]
@@ -596,9 +617,17 @@ displayInstaller model =
                         in
                         div [] [ text err ]
                 , div [ class "is-half tile is-ancestor", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
-                    [ div [ class "tile is-vertical" ]
-                        [ div [ class "tile is-child" ] [ p [] [ text model.docs ] ]
-                        , div [ class "tile is-child" ] [ img [ src ("images/" ++ model.image ++ ".png") ] [] ]
+                    [ section [ class "section" ]
+                        [ div [ class "tile is-vertical" ]
+                            [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
+                            , div [ class "tile is-child" ]
+                                [ img
+                                    [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
+                                    , on "error" (Decode.succeed ImageError)
+                                    ]
+                                    []
+                                ]
+                            ]
                         ]
                     ]
                 ]
@@ -612,6 +641,20 @@ displayInstaller model =
                         [ text model.modal_text
                         ]
                     , button [ class "modal-close is-large", onClick HideModal ] []
+                    ]
+                ]
+
+          else
+            div [] []
+        , if not model.tc then
+            div [ class "modal is-active" ]
+                [ div [ class "modal-background" ]
+                    []
+                , div [ class "modal-card" ]
+                    [ section [ class "modal-card-body" ]
+                        [ div [] tcText
+                        , button [ class "button is-success", onClick AcceptTC ] [ text "I agree" ]
+                        ]
                     ]
                 ]
 
@@ -853,3 +896,12 @@ unwrapInstallerOption option =
     case option of
         InstallerOption l ->
             l
+
+
+tcText : List (Html Msg)
+tcText =
+    [ p [] [ text "Welcome to the Network Addon Mod 37 installer application! Please read the following carefully, then select 'I agree with these conditions' to continue." ]
+    , p [] [ text "---------------------------------------------------------------------------------------------" ]
+    , p [] [ text "Users download, install, and run this software completely and solely at their own risk. Maxis, Electronic Arts,the creators, and its individual contributors are not responsible for any errors, crashes, problems, or any other issue that you may have if you have downloaded and applied this software to your game. Players should also expect that any future patches and/or expansion packs and SimCityscape may not function properly with the game if you have downloaded this  software and applied it to your game. The use of this software, the information\n within, and the Network Addon Mod is conditional upon the acceptance of this disclaimer and all that is within this software." ]
+    , p [] [ text "---------------------------------------------------------------------------------------------" ]
+    ]
