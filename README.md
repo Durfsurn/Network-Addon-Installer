@@ -21,7 +21,7 @@ Images are the same, and must be in `.png` format:
 Assuming you have Rust installed, run `cargo build --release` from the root folder. Your output binary will be found in `target/release/` called `network-addon-installer`.
 
 ## TODO
-- [ ] Fix strange radio button issues (deselecting children, strange behaviour interacting with other radio buttons)
+- [x] Fix strange radio button issues (deselecting children, strange behaviour interacting with other radio buttons)
 - [ ] Send selection back to Rust and prompt install
 - [ ] Test on Windows, Linux, Mac
 - [ ] Potentially recode a Controller Compiler? (stretch goal)

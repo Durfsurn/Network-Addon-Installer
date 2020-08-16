@@ -51,6 +51,7 @@ type alias Model =
     { flags : Flags
     , state : State
     , installer_options : WebData InstallerOption
+    , list_installer_options : InstallerOption
     , hide_list : List String
     , locked_options : List String
     , select_list : List String
@@ -73,7 +74,7 @@ type Msg
     | SelectDocs String
     | AddCheckOption ( String, String )
     | AddCheckOptionWithChildren ( String, String, List OptionNode )
-    | AddRadioOption ( String, String )
+    | AddRadioOption ( String, String, List OptionNode )
     | RemoveOption String
     | RemoveOptionWithChildren ( String, String, List OptionNode )
     | ReceiveDocs (WebData String)
@@ -96,6 +97,7 @@ init flags =
       , modal = False
       , modal_text = ""
       , installer_options = RemoteData.Loading
+      , list_installer_options = InstallerOption []
       , locked_options = []
       , hide_list = []
       , select_list = []
@@ -325,7 +327,7 @@ update message model =
             in
             ( { model | select_list = new_select_list }, Cmd.none )
 
-        AddRadioOption ( parent, name ) ->
+        AddRadioOption ( parent, name, children ) ->
             let
                 closest =
                     getClosestParent parent
@@ -336,9 +338,24 @@ update message model =
                         model.select_list
 
                 new_select_list =
-                    List.map (\s -> LExtra.remove s model.select_list) remove_list |> List.concat
+                    List.map (\s -> LExtra.remove s model.select_list) remove_list
+                        |> List.concat
+                        |> List.append [ parent ++ "/" ++ name ]
+
+                add_selected_children =
+                    addOptionsRecursively children new_select_list
+                        |> LExtra.unique
+
+                other_radio =
+                    List.filter
+                        (\s -> getClosestParentFromId s == closest)
+                        model.select_list
+                        |> List.map (\s -> lookupNodeFromId s model.list_installer_options)
+
+                remove_other_radio_children =
+                    removeOptionsRecursively (List.map (\i -> unwrapInstallerOption i.children) other_radio |> List.concat) add_selected_children
             in
-            ( { model | select_list = (parent ++ "/" ++ name) :: new_select_list |> LExtra.unique }, Cmd.none )
+            ( { model | select_list = remove_other_radio_children }, Cmd.none )
 
         RemoveOption id ->
             ( { model | select_list = LExtra.remove id model.select_list |> LExtra.unique }, Cmd.none )
@@ -366,10 +383,28 @@ update message model =
                         locked_options =
                             getLocked r
                     in
-                    ( { model | installer_options = res, hide_list = hide_list, select_list = select_list, locked_options = locked_options }, Cmd.none )
+                    ( { model | installer_options = res, hide_list = hide_list, select_list = select_list, locked_options = locked_options, list_installer_options = r }, Cmd.none )
 
                 _ ->
                     ( { model | installer_options = res }, Cmd.none )
+
+
+lookupNodeFromId : String -> InstallerOption -> OptionNode
+lookupNodeFromId id nodes =
+    let
+        opts nds =
+            unwrapInstallerOption nds
+                ++ (List.map (\c -> opts c.children) (unwrapInstallerOption nds) |> List.concat)
+    in
+    List.filter (\opt -> (opt.parent ++ "/" ++ opt.name) == id) (opts nodes)
+        |> List.head
+        |> Maybe.withDefault
+            { name = "ERROR"
+            , radio_check = Locked
+            , children = InstallerOption []
+            , depth = -100
+            , parent = "ERROR"
+            }
 
 
 checkExePath : String -> Cmd Msg
@@ -416,20 +451,35 @@ decodePatchResponse =
 
 addOptionsRecursively : List OptionNode -> List String -> List String
 addOptionsRecursively options current =
+    let
+        no_radio =
+            List.filter (\i -> i.radio_check /= Radio) options
+    in
     List.append current
         (List.map
             (\i -> i.parent ++ "/" ++ i.name)
-            options
-            ++ (List.map (\c -> addOptionsRecursively (unwrapInstallerOption c.children) current) options |> List.concat)
+            no_radio
+            ++ (List.map (\c -> addOptionsRecursively (unwrapInstallerOption c.children) current) no_radio |> List.concat)
         )
 
 
 removeOptionsRecursively : List OptionNode -> List String -> List String
 removeOptionsRecursively options current =
     let
+        ( radio, no_radio ) =
+            List.partition (\i -> i.radio_check == Radio || i.radio_check == RadioChecked || i.radio_check == RadioFolder) options
+
+        -- remove_radio_children =
+        --     List.filter (\i -> i.radio_check == RadioChecked && List.length (unwrapInstallerOption i.children) > 0) radio
+        --         |> List.map (\c -> getId c.children)
+        --         |> List.concat
+        -- _ =
+        --     Debug.log "" remove_radio_children
         to_remove =
-            List.map (\i -> i.parent ++ "/" ++ i.name) options
-                ++ (List.map (\c -> getId c.children) options |> List.concat)
+            List.map (\i -> i.parent ++ "/" ++ i.name) no_radio
+                |> List.append (List.map (\c -> getId c.children) no_radio |> List.concat)
+
+        -- |> List.append remove_radio_children
     in
     List.filter (\c -> not <| List.member c to_remove) current
 
@@ -619,15 +669,18 @@ displayInstaller model =
                 , div [ class "is-half tile is-ancestor", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
                     [ section [ class "section" ]
                         [ div [ class "tile is-vertical" ]
-                            [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
-                            , div [ class "tile is-child" ]
-                                [ img
-                                    [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
-                                    , on "error" (Decode.succeed ImageError)
-                                    ]
-                                    []
-                                ]
-                            ]
+                          -- [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
+                          -- , div [ class "tile is-child" ]
+                          --     [ img
+                          --         [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
+                          --         , on "error" (Decode.succeed ImageError)
+                          --         ]
+                          --         []
+                          --     ]
+                          -- ]
+                          <|
+                            List.map (\item -> p [] [ text item ]) <|
+                                List.sort model.select_list
                         ]
                     ]
                 ]
@@ -777,7 +830,7 @@ radioUnchecked model option =
             , type_ "radio"
             , disabled (model.state /= PatchedExe)
             , name <| String.fromInt option.depth ++ "_" ++ option.parent
-            , onClick (AddRadioOption ( option.parent, option.name ))
+            , onClick (AddRadioOption ( option.parent, option.name, unwrapInstallerOption option.children ))
             ]
             []
         ]
