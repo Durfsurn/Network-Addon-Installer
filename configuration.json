@@ -1,5 +1,5 @@
 {
     "title": "Network Addon Mod",
-    "version": 39,
-    "web_server_port": 38383
+    "nam_version": "37",
+    "web_server_port": 37373
 }

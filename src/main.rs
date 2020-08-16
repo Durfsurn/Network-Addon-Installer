@@ -4,7 +4,7 @@ use log::{info, warn, debug, error};
 use anyhow::anyhow;
 use percent_encoding;
 use rust_embed::RustEmbed;
-use std::path::{Path};
+use std::path::Path;
 use os_info;
 
 #[derive(RustEmbed)]
@@ -38,7 +38,7 @@ struct Configuration {
     title: String,
     #[serde(default = "rust_version")]
     rust_version: String,
-    version: f64,
+    nam_version: String,
     web_server_port: u16,
     #[serde(default)]
     windows: bool
@@ -57,6 +57,10 @@ fn calculate_folders(strs: &mut Vec<String>) -> Vec<String> {
     folders.iter().filter(|f| f.len() > 0).map(|f| f.to_string()).collect::<Vec<String>>()
 }
 
+// State Checkers to prevent spoofed http calls from causing a mangled installation, including making sure windows sc4 is patched
+static mut CHECKED_EXE: bool = false;
+static mut PATCHED_EXE: bool = false;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {    
     let windows = os_info::get().os_type().to_string().to_lowercase() == "windows";
@@ -64,6 +68,7 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let mut config: Configuration = serde_json::from_str(CONFIG)?;
     config.windows = windows;
+
 
     let file_list: Vec<String> = calculate_folders(InstallAsset::iter().map(|asset| asset.to_string()).collect::<Vec<String>>().as_mut());
 
@@ -77,7 +82,8 @@ async fn main() -> anyhow::Result<()> {
             folder_structure(&format!("{}/", uuid))?
         ].to_vec()
     ;
-    
+    let arc_folder_structure = std::sync::Arc::new(folder_structure.clone());
+
     std::fs::remove_dir_all(format!("{}", uuid))?;
 
     info!("{:#?}", config);
@@ -106,6 +112,24 @@ async fn main() -> anyhow::Result<()> {
         .boxed()
     ;
 
+    let get_plugins_location = warp::get()
+        .and(warp::path!("plugins"))
+        .and_then(find_plugins)
+        .boxed()
+    ;
+
+    let get_select_exe = warp::get()
+        .and(warp::path!("select_exe"))
+        .and_then(select_exe)
+        .boxed()
+    ;
+
+    let get_select_plugins = warp::get()
+        .and(warp::path!("select_plugins"))
+        .and_then(select_plugins)
+        .boxed()
+    ;
+
     let get_images = warp::get()
         .and(warp::path!("images" / String))
         .and_then(load_local_image)
@@ -123,6 +147,16 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path!("patch_exe"))
         .and(warp::body::json())
         .and_then(patch_exe_windows)
+        .boxed()
+    ;
+
+    let post_install_list = warp::post()
+        .and(warp::path!("install_list"))
+        .and(warp::body::json())
+        .map(move |json: InstallConfig| {
+            (json.clone(), arc_folder_structure.clone())
+        })
+        .and_then(install_nam)
         .boxed()
     ;
 
@@ -144,20 +178,38 @@ async fn main() -> anyhow::Result<()> {
         .or(get_structure)
         .or(get_docs)
         .or(get_images)
+        .or(get_plugins_location)
+        .or(get_select_exe)
+        .or(get_select_plugins)
         .or(post_check_path)
         .or(post_patch_exe)
+        .or(post_install_list)
         .or(any)
     );
     let port: u16 = config.clone().web_server_port;
    
-    webbrowser::open(&format!("http://localhost:{}", port.to_owned()))?;
+    webbrowser::open(&format!("http://127.0.0.1:{}", port.to_owned()))?;
 
     warp::serve(all_routes).run(([0, 0, 0, 0], port.to_owned())).await;
 
     Ok(())
 }
 
-async fn check_exe(path: String) -> String {    
+async fn select_plugins() -> Result<impl warp::Reply> {
+    let def_path = get_def_plugins().await?;
+    let selected_path = select_folder_dialog(Some(def_path.as_str())).await?;
+
+    Ok(selected_path)
+}
+
+async fn select_exe() -> Result<impl warp::Reply> {
+    let def_path = get_def_home().await?;
+    let selected_path = select_file_dialog(Some(def_path.as_str())).await?;
+
+    Ok(selected_path)
+}
+
+fn check_exe(path: String) -> String {    
     let file = std::fs::metadata(&path);
     match file {
         Ok(f) => {                
@@ -178,22 +230,28 @@ async fn check_exe(path: String) -> String {
                 ;
                 let acceptable_versions = vec!["1.1.638.0", "1.1.640.0", "1.1.641.0"];
                 if acceptable_versions.contains(&version.as_str()) {
+                    unsafe {
+                        CHECKED_EXE = true;
+                    };
                     serde_json::json!({
                         "version": version.to_string(),
-                        "valid" : true
+                        "valid" : true,
+                        "path" : path
                     })
                 }
                 else {
                     serde_json::json!({
                         "version": version.to_string(),
-                        "valid" : false
+                        "valid" : false,
+                        "path" : ""
                     })
                 }
             }
             else {
                 serde_json::json!({
                     "version": "Could not locate exe.".to_string(),
-                    "valid" : false
+                    "valid" : false,
+                    "path" : ""
                 })
             }
         }
@@ -201,14 +259,15 @@ async fn check_exe(path: String) -> String {
             warn!("{}", e.to_string());
             serde_json::json!({
                 "version": "Could not locate exe.".to_string(),
-                "valid" : false
+                "valid" : false,
+                "path" : ""
             })
         }
     }.to_string()
 }
 
 async fn check_exe_location_windows(path: String) -> Result<impl warp::Reply> {
-    let check = check_exe(path).await;
+    let check = check_exe(path);
     Ok(check)
 }
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -217,8 +276,53 @@ struct ExeResp {
     valid : bool
 }
 
+fn flatten_installer_options(options: std::sync::Arc<Vec<InstallerOption>>) -> Vec<InstallerOption> {
+    let mut output: Vec<Vec<InstallerOption>> = Vec::new();
+    for opt in options.iter() {
+        let mut no_child = opt.clone();
+        no_child.children = Vec::new();
+        output.push([no_child].to_vec());
+        let children_arc = std::sync::Arc::new(opt.children.clone());
+        output.push(flatten_installer_options(children_arc));
+    };
+    let mut output = output.concat();
+    // output.sort_by(|a, b| a.name.cmp(&b.name));
+    output.sort_unstable();
+    output.dedup();
+    output
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct InstallConfig {
+    files_to_install: Vec<String>,
+    location: String 
+}
+async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<Vec<InstallerOption>>)) -> Result<impl warp::Reply> {
+    let options = flatten_installer_options(options);
+    std::thread::spawn(move || {
+        let mut chosen_options: Vec<InstallerOption> = Vec::new();
+        for file in install_config.files_to_install {
+            let opt: Vec<InstallerOption> = options.iter().filter(|o| format!("{}/{}", o.parent, o.name.clone()) == file).map(|o| o.to_owned()).collect();
+            if opt.len() > 0 {
+                chosen_options.push(opt[0].clone())
+            }
+            else {
+                continue
+            }
+        };
+        println!("{:#?}", chosen_options.iter().map(|o| format!("{}/{}", o.parent, o.name.clone())).collect::<Vec<String>>());            
+    });
+
+    Ok(serde_json::json!(
+        { "percent" : 0.0
+        , "done" : false
+        , "files_copied" : []
+        }
+    ).to_string())
+}
+
 async fn patch_exe_windows(path: String) -> Result<impl warp::Reply> {
-    let resp: ExeResp = serde_json::from_str(&check_exe(path.clone()).await).unwrap();
+    let resp: ExeResp = serde_json::from_str(&check_exe(path.clone())).unwrap();
     if resp.valid {
         let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
         std::fs::write(format!("{}-4gb_patch.exe", uuid), FOUR_GB).expect("Unable to write file.");
@@ -230,13 +334,71 @@ async fn patch_exe_windows(path: String) -> Result<impl warp::Reply> {
         ;
         std::fs::remove_file(format!("{}-4gb_patch.exe", uuid)).expect("Unable to remove file.");
         match out {
-            Ok(_) => Ok(serde_json::json!({ "patched" : true }).to_string()),
+            Ok(_) => Ok({
+                unsafe {
+                    PATCHED_EXE = true;
+                };
+                serde_json::json!({ "patched" : true }).to_string()
+            }),
             Err(_) => Ok(serde_json::json!({ "patched" : false }).to_string())
         }        
     }
     else {
         Ok(serde_json::json!({ "patched" : false }).to_string())
     }
+}
+
+async fn select_folder_dialog(def_path: Option<&str>) -> Result<String> {
+    let result = nfd::open_pick_folder(def_path).unwrap();
+
+    match result {
+        nfd::Response::Okay(folder) => Ok(folder),
+        _ => Ok("".to_string())
+    }
+}
+async fn select_file_dialog(def_path: Option<&str>) -> Result<String> {
+    let dialog = nfd::open_file_dialog(Some("exe"), def_path).unwrap();
+
+    let dialog_res = match dialog {
+        nfd::Response::Okay(folder) => folder,
+        _ => "".to_string()
+    };
+    let check_res = check_exe(dialog_res);
+    Ok(check_res)
+}
+
+async fn get_def_home() -> Result<String> {    
+    let user_dir = directories::UserDirs::new().unwrap();
+    Ok(user_dir
+        .home_dir()
+        .to_string_lossy()
+        .to_string()
+    )
+}
+
+async fn get_def_plugins() -> Result<String> {    
+    let user_dir = directories::UserDirs::new().unwrap();
+    let home_dir = user_dir
+        .home_dir()
+        .to_string_lossy()
+        .to_string()
+    ;
+
+    match os_info::get().os_type().to_string().to_lowercase().as_str() {
+        "windows" => {
+            Ok(format!("{}\\Documents\\SimCity 4\\Plugins", home_dir))
+        }
+        "macos" => {
+            Ok(format!("{}/Documents/SimCity 4/Plugins", home_dir))
+        }
+        _ => {
+            Ok(format!("{}/Documents/SimCity 4/Plugins", home_dir))
+        }
+    }
+}
+
+async fn find_plugins() -> Result<impl warp::Reply> {
+    get_def_plugins().await
 }
 
 async fn load_local_file(file_name: String) -> Result<impl warp::Reply> {
@@ -355,7 +517,7 @@ pub async fn handle_rejection(error: warp::reject::Rejection) -> Result<impl war
     };
     Ok(error_msg)
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Ord, PartialOrd, Eq)]
 enum RadioCheck {
     Radio,
     RadioChecked,
@@ -403,17 +565,18 @@ impl RadioCheck {
         }
     }
 }
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Ord, PartialOrd, Eq)]
 struct InstallerOption {
     name: String,
+    original_name: String,
     radio_check: RadioCheck,
     children: Vec<InstallerOption>,
     depth: u16,
     parent: String
 }
 impl InstallerOption {
-    fn new<N>(name: N, radio_check: RadioCheck) -> anyhow::Result<Self> where N: Into<String>{
-        let name: String = name.into()
+    fn new(original_name: String, radio_check: RadioCheck) -> anyhow::Result<Self>{
+        let name: String = original_name
             .replace("$1", "")
             .replace("$2", "")
             .replace("$3", "")
@@ -433,6 +596,7 @@ impl InstallerOption {
 
         Ok(InstallerOption {
             name,
+            original_name,
             radio_check,
             children: Vec::new(),
             depth: 0,
@@ -443,6 +607,7 @@ impl InstallerOption {
         children.append(self.children.clone().as_mut());
         InstallerOption {
             name: self.name.clone(),
+            original_name: self.original_name.clone(),
             radio_check: self.radio_check.clone(),
             children: children.to_vec(),
             depth: self.depth.clone(),
@@ -452,7 +617,7 @@ impl InstallerOption {
 }
 
 fn folder_structure(dir: &str) -> anyhow::Result<InstallerOption> {
-    let options = InstallerOption::new("Network Addon Mod", RadioCheck::new("Locked")?)?;
+    let options = InstallerOption::new("Network Addon Mod".to_string(), RadioCheck::new("Locked")?)?;
     
     Ok(options.push_children(parse_folder(dir, 0, "top")?.as_mut()))
 }
@@ -469,7 +634,7 @@ fn parse_folder(dir: &str, parent_depth: u16, parent_name: &str) -> anyhow::Resu
 
                 let local_res = 
                     if e.metadata()?.is_dir() {
-                        let mut local_option = InstallerOption::new(f_n, RadioCheck::determine(&f_n))?;
+                        let mut local_option = InstallerOption::new(f_n.to_string(), RadioCheck::determine(&f_n))?;
                         local_option.depth = parent_depth + 1;
                         local_option.parent = parent_name.into();
                         let mut children = parse_folder(&e.path().to_str().unwrap(), parent_depth + 1, &format!("{}/{}", parent_name, &local_option.name))?;

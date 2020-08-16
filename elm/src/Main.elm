@@ -1,9 +1,9 @@
 module Main exposing (main)
 
-import Browser exposing (..)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (..)
+import Browser exposing (document)
+import Html exposing (Html, br, button, div, h3, img, input, label, p, section, td, text, tr)
+import Html.Attributes exposing (checked, class, disabled, name, src, style, type_, value)
+import Html.Events exposing (on, onClick, onInput)
 import Http
 import Json.Decode as Decode exposing (Decoder)
 import Json.Decode.Pipeline as JsonP
@@ -38,10 +38,13 @@ type State
     | TCAccept
     | CheckedExe
     | PatchedExe
+    | SelectedOptions
+    | ViewInstallItems
 
 
 type alias Flags =
     { rust_version : String
+    , nam_version : String
     , windows : String
     , current_date : String
     }
@@ -55,6 +58,7 @@ type alias Model =
     , hide_list : List String
     , locked_options : List String
     , select_list : List String
+    , default_select_list : List String
     , selected : String
     , docs : String
     , image : String
@@ -63,30 +67,44 @@ type alias Model =
     , loading : Bool
     , sc4_location : String
     , sc4_location_option : String
+    , install_location : String
     , tc : Bool
+    , progress : Maybe InstallProgression
     }
 
 
 type Msg
-    = NoOp
-    | ReceiveStructure (WebData InstallerOption)
-    | ToggleExpand ExpandCollapse String
+    = ReceiveStructure (WebData InstallerOption)
+    | ReceiveDocs (WebData String)
+    | ReceivePluginsLocation (WebData String)
     | SelectDocs String
+    | InstallProgress (WebData InstallProgression)
+    | GotExePathStatus (WebData ExeResponse)
+    | GotExePatchStatus (WebData PatchResponse)
+      -- Select List Mutators
+    | ToggleExpand ExpandCollapse String
     | AddCheckOption ( String, String )
     | AddCheckOptionWithChildren ( String, String, List OptionNode )
     | AddRadioOption ( String, String, List OptionNode )
     | RemoveOption String
     | RemoveOptionWithChildren ( String, String, List OptionNode )
-    | ReceiveDocs (WebData String)
+      -- Model Mutators
     | ChangeLocationOption String
     | ChangeExePath String
     | CheckExePath
-    | GotExePathStatus (WebData ExeResponse)
-    | GotExePatchStatus (WebData PatchResponse)
+    | SelectExePath
+    | SelectPlugins
     | HideModal
+    | HideInstallItems
+    | HideInstallModal
+    | ImageError
+    | ResetSelectList
+      -- State Changes
     | AcceptTC
     | PatchExe
-    | ImageError
+    | ChooseInstallOption
+    | Install
+    | ViewInstallList
 
 
 init : Flags -> ( Model, Cmd Msg )
@@ -101,14 +119,17 @@ init flags =
       , locked_options = []
       , hide_list = []
       , select_list = []
+      , default_select_list = []
       , selected = ""
       , docs = ""
       , image = "Network Addon Mod"
       , sc4_location = "C:/Program Files/Steam/steamapps/common/SimCity 4 Deluxe/Apps/SimCity 4.exe"
+      , install_location = "%USERPROFILE%/Documents/SimCity 4/Plugins"
       , sc4_location_option = "Steam"
       , tc = False
+      , progress = Nothing
       }
-    , fetchStructure
+    , Cmd.batch [ fetchStructure, fetchPlugins ]
     )
 
 
@@ -130,11 +151,35 @@ fetchStructure =
         }
 
 
+fetchPlugins : Cmd Msg
+fetchPlugins =
+    Http.get
+        { url = "/plugins"
+        , expect = Http.expectString (RemoteData.fromResult >> ReceivePluginsLocation)
+        }
+
+
 fetchDocs : String -> Cmd Msg
 fetchDocs id =
     Http.get
         { url = "docs/" ++ (String.replace "/" "%2F" id |> String.replace "top%2F" "")
         , expect = Http.expectString (RemoteData.fromResult >> ReceiveDocs)
+        }
+
+
+selectExePath : Cmd Msg
+selectExePath =
+    Http.get
+        { url = "select_exe"
+        , expect = Http.expectJson (RemoteData.fromResult >> GotExePathStatus) decodeExeResponse
+        }
+
+
+selectPluginsFolder : Cmd Msg
+selectPluginsFolder =
+    Http.get
+        { url = "select_plugins"
+        , expect = Http.expectString (RemoteData.fromResult >> ReceivePluginsLocation)
         }
 
 
@@ -170,26 +215,6 @@ radioCheckFromString =
             )
 
 
-
--- radioCheckToString : RadioCheck -> String
--- radioCheckToString rc =
---     case rc of
---         Radio ->
---             "Radio"
---         RadioChecked ->
---             "RadioChecked"
---         RadioFolder ->
---             "RadioFolder"
---         Checked ->
---             "Checked"
---         Locked ->
---             "Locked"
---         Unchecked ->
---             "Unchecked"
---         ParentLocked ->
---             "ParentLocked"
-
-
 type alias OptionNode =
     { name : String
     , radio_check : RadioCheck
@@ -201,12 +226,6 @@ type alias OptionNode =
 
 type InstallerOption
     = InstallerOption (List OptionNode)
-
-
-
--- defInstallerOption : InstallerOption
--- defInstallerOption =
---     InstallerOption []
 
 
 decodeOptionNode : Decoder OptionNode
@@ -227,9 +246,6 @@ decodeInstallerOption =
 update : Msg -> Model -> ( Model, Cmd Msg )
 update message model =
     case message of
-        NoOp ->
-            ( model, Cmd.none )
-
         ToggleExpand expand_collapse id ->
             case expand_collapse of
                 Expand ->
@@ -240,6 +256,12 @@ update message model =
 
         HideModal ->
             ( { model | modal = False }, Cmd.none )
+
+        HideInstallItems ->
+            ( { model | state = SelectedOptions }, Cmd.none )
+
+        HideInstallModal ->
+            ( { model | state = PatchedExe }, Cmd.none )
 
         AcceptTC ->
             ( { model
@@ -254,6 +276,9 @@ update message model =
             , Cmd.none
             )
 
+        ViewInstallList ->
+            ( { model | state = ViewInstallItems }, Cmd.none )
+
         SelectDocs id ->
             ( { model | selected = id, image = id }, fetchDocs id )
 
@@ -266,8 +291,20 @@ update message model =
         CheckExePath ->
             ( { model | loading = True }, checkExePath model.sc4_location )
 
+        SelectExePath ->
+            ( { model | loading = True }, selectExePath )
+
         PatchExe ->
             ( { model | loading = True }, patchExe model.sc4_location )
+
+        ResetSelectList ->
+            ( { model | select_list = model.default_select_list }, Cmd.none )
+
+        SelectPlugins ->
+            ( { model | loading = True }, selectPluginsFolder )
+
+        ChooseInstallOption ->
+            ( { model | state = SelectedOptions }, Cmd.none )
 
         ChangeLocationOption option ->
             let
@@ -288,7 +325,7 @@ update message model =
             case resp of
                 RemoteData.Success r ->
                     if r.valid then
-                        ( { model | state = CheckedExe, loading = False }, Cmd.none )
+                        ( { model | state = CheckedExe, loading = False, sc4_location = r.path }, Cmd.none )
 
                     else if String.length r.version < 10 then
                         ( { model | modal = True, loading = False, modal_text = "Your version of SimCity 4 is " ++ r.version ++ ". It must be 1.1.638.0 or higher." }, Cmd.none )
@@ -313,6 +350,9 @@ update message model =
 
         ReceiveDocs string ->
             ( { model | docs = RemoteData.unwrap "" identity string }, Cmd.none )
+
+        ReceivePluginsLocation string ->
+            ( { model | install_location = RemoteData.unwrap "" identity string, loading = False }, Cmd.none )
 
         AddCheckOption ( parent, name ) ->
             ( { model | select_list = (parent ++ "/" ++ name) :: model.select_list |> LExtra.unique }, Cmd.none )
@@ -383,10 +423,62 @@ update message model =
                         locked_options =
                             getLocked r
                     in
-                    ( { model | installer_options = res, hide_list = hide_list, select_list = select_list, locked_options = locked_options, list_installer_options = r }, Cmd.none )
+                    ( { model
+                        | installer_options = res
+                        , hide_list = hide_list
+                        , select_list = select_list
+                        , default_select_list = select_list
+                        , locked_options = locked_options
+                        , list_installer_options = r
+                      }
+                    , Cmd.none
+                    )
 
                 _ ->
                     ( { model | installer_options = res }, Cmd.none )
+
+        Install ->
+            ( model, sendInstallList model.select_list model.install_location )
+
+        InstallProgress progress ->
+            case progress of
+                RemoteData.Success pr ->
+                    ( { model | progress = Just pr }, Cmd.none )
+
+                _ ->
+                    ( model, Cmd.none )
+
+
+sendInstallList : List String -> String -> Cmd Msg
+sendInstallList selections location =
+    Http.post
+        { url = "install_list"
+        , body = Http.jsonBody <| encodeInstallList selections location --<| Encode.list Encode.string selections
+        , expect = Http.expectJson (RemoteData.fromResult >> InstallProgress) decodeInstallProgress
+        }
+
+
+encodeInstallList : List String -> String -> Encode.Value
+encodeInstallList selections location =
+    Encode.object
+        [ ( "files_to_install", Encode.list Encode.string selections )
+        , ( "location", Encode.string location )
+        ]
+
+
+type alias InstallProgression =
+    { percent : Float
+    , done : Bool
+    , files_copied : List String
+    }
+
+
+decodeInstallProgress : Decoder InstallProgression
+decodeInstallProgress =
+    Decode.succeed InstallProgression
+        |> JsonP.required "percent" Decode.float
+        |> JsonP.required "done" Decode.bool
+        |> JsonP.required "files_copied" (Decode.list Decode.string)
 
 
 lookupNodeFromId : String -> InstallerOption -> OptionNode
@@ -416,18 +508,10 @@ checkExePath path =
         }
 
 
-patchExe : String -> Cmd Msg
-patchExe path =
-    Http.post
-        { url = "patch_exe"
-        , body = Http.jsonBody <| Encode.string path
-        , expect = Http.expectJson (RemoteData.fromResult >> GotExePatchStatus) decodePatchResponse
-        }
-
-
 type alias ExeResponse =
     { version : String
     , valid : Bool
+    , path : String
     }
 
 
@@ -436,6 +520,16 @@ decodeExeResponse =
     Decode.succeed ExeResponse
         |> JsonP.required "version" Decode.string
         |> JsonP.required "valid" Decode.bool
+        |> JsonP.required "path" Decode.string
+
+
+patchExe : String -> Cmd Msg
+patchExe path =
+    Http.post
+        { url = "patch_exe"
+        , body = Http.jsonBody <| Encode.string path
+        , expect = Http.expectJson (RemoteData.fromResult >> GotExePatchStatus) decodePatchResponse
+        }
 
 
 type alias PatchResponse =
@@ -466,20 +560,12 @@ addOptionsRecursively options current =
 removeOptionsRecursively : List OptionNode -> List String -> List String
 removeOptionsRecursively options current =
     let
-        ( radio, no_radio ) =
-            List.partition (\i -> i.radio_check == Radio || i.radio_check == RadioChecked || i.radio_check == RadioFolder) options
+        no_radio =
+            List.filter (\i -> i.radio_check == Radio || i.radio_check == RadioChecked || i.radio_check == RadioFolder) options
 
-        -- remove_radio_children =
-        --     List.filter (\i -> i.radio_check == RadioChecked && List.length (unwrapInstallerOption i.children) > 0) radio
-        --         |> List.map (\c -> getId c.children)
-        --         |> List.concat
-        -- _ =
-        --     Debug.log "" remove_radio_children
         to_remove =
             List.map (\i -> i.parent ++ "/" ++ i.name) no_radio
                 |> List.append (List.map (\c -> getId c.children) no_radio |> List.concat)
-
-        -- |> List.append remove_radio_children
     in
     List.filter (\c -> not <| List.member c to_remove) current
 
@@ -539,6 +625,14 @@ view model =
 
 displayInstaller : Model -> Html Msg
 displayInstaller model =
+    let
+        height_ =
+            if model.flags.windows == "true" then
+                "62vh"
+
+            else
+                "82vh"
+    in
     div [ class "application-area" ]
         [ div [ style "padding" "15px" ]
             [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ]
@@ -594,21 +688,32 @@ displayInstaller model =
                                 ]
                                 []
                             ]
-                        , div [ class "column is-narrow" ]
-                            [ button
-                                [ class "button is-success"
-                                , class <|
+                        , div [ class "column is-narrow buttons has-addons" ]
+                            (let
+                                lding =
                                     if model.loading then
                                         "is-loading"
 
                                     else
                                         ""
+                             in
+                             [ button
+                                [ class "button is-warning"
+                                , class lding
+                                , onClick SelectExePath
+                                , disabled (model.state /= TCAccept)
+                                ]
+                                [ text "Select Exe (EXPERIMENTAL)" ]
+                             , button
+                                [ class "button is-success"
+                                , class lding
                                 , style "margin-bottom" "0rem"
                                 , onClick CheckExePath
                                 , disabled (model.state /= TCAccept)
                                 ]
                                 [ text "Check SimCity 4 Executable Location" ]
-                            ]
+                             ]
+                            )
                         ]
                     , div [ class "" ]
                         [ button
@@ -634,7 +739,7 @@ displayInstaller model =
             , div [ class "columns" ]
                 [ case model.installer_options of
                     RemoteData.Success opts ->
-                        div [ class "is-half", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
+                        div [ class "is-half", style "max-height" height_, style "overflow-y" "auto", style "min-height" height_, style "width" "50vw" ]
                             (List.concat <|
                                 List.map (displayOptions model) <|
                                     unwrapInstallerOption opts
@@ -666,26 +771,76 @@ displayInstaller model =
                                         "Timeout"
                         in
                         div [] [ text err ]
-                , div [ class "is-half tile is-ancestor", style "max-height" "70vh", style "overflow-y" "auto", style "min-height" "70vh", style "width" "50vw" ]
+                , div [ class "is-half tile is-ancestor", style "max-height" height_, style "overflow-y" "auto", style "min-height" height_, style "width" "50vw" ]
                     [ section [ class "section" ]
                         [ div [ class "tile is-vertical" ]
-                          -- [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
-                          -- , div [ class "tile is-child" ]
-                          --     [ img
-                          --         [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
-                          --         , on "error" (Decode.succeed ImageError)
-                          --         ]
-                          --         []
-                          --     ]
-                          -- ]
-                          <|
-                            List.map (\item -> p [] [ text item ]) <|
-                                List.sort model.select_list
+                            [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
+                            , div [ class "tile is-child" ]
+                                [ img
+                                    [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
+                                    , on "error" (Decode.succeed ImageError)
+                                    ]
+                                    []
+                                ]
+                            ]
                         ]
                     ]
                 ]
+            , div [ class "buttons has-addons" ]
+                (let
+                    dsbld =
+                        model.state /= PatchedExe
+                 in
+                 [ button [ class "button is-warning", disabled dsbld, onClick ResetSelectList ] [ text "Reset Selection to Default" ]
+                 , button [ class "button is-success", disabled dsbld, onClick ChooseInstallOption ] [ text "Choose Install Location" ]
+                 ]
+                )
             ]
-        , if model.modal then
+        , if model.state == ViewInstallItems then
+            div [ class "modal is-active" ]
+                [ div [ class "modal-background" ]
+                    []
+                , div [ class "modal-card", style "min-width" "75%" ]
+                    [ section [ class "modal-card-body" ]
+                        [ div [] <| List.map displayOptionNames <| List.sort model.select_list
+                        ]
+                    , button [ class "modal-close is-large", onClick HideInstallItems ] []
+                    ]
+                ]
+
+          else if model.state == SelectedOptions then
+            div [ class "modal is-active" ]
+                [ div [ class "modal-background" ]
+                    []
+                , div [ class "modal-card", style "min-width" "40%" ]
+                    [ section [ class "modal-card-body" ]
+                        [ div []
+                            [ label [ class "label" ] [ text "Install Location" ]
+                            , input [ class "input is-4", value model.install_location ] []
+                            ]
+                        , br [] []
+                        , div [ class "has-addons buttons" ]
+                            [ button
+                                [ class "button is-warning"
+                                , class <|
+                                    if model.loading then
+                                        "is-loading"
+
+                                    else
+                                        ""
+                                , onClick SelectPlugins
+                                ]
+                                [ text "Select Plugins Folder (EXPERIMENTAL)" ]
+                            , button [ class "button is-success", onClick Install ] [ text <| "Install NAM v" ++ model.flags.nam_version ]
+                            , button [ class "button is-info", onClick ViewInstallList ] [ text "View Install Items" ]
+                            ]
+                        , p [] [ text "Please note, this installer will clean out your plugins folder of offending files that interfere with the NAM, usually previous installations of the NAM. It will move these files to a folder called plugins_bak on the same level as your chosen installation location." ]
+                        , button [ class "modal-close is-large", onClick HideInstallModal ] []
+                        ]
+                    ]
+                ]
+
+          else if model.modal then
             div [ class "modal is-active" ]
                 [ div [ class "modal-background" ]
                     []
@@ -697,9 +852,7 @@ displayInstaller model =
                     ]
                 ]
 
-          else
-            div [] []
-        , if not model.tc then
+          else if not model.tc then
             div [ class "modal is-active" ]
                 [ div [ class "modal-background" ]
                     []
@@ -713,6 +866,15 @@ displayInstaller model =
 
           else
             div [] []
+        ]
+
+
+displayOptionNames : String -> Html Msg
+displayOptionNames selection =
+    tr
+        []
+        [ td [ style "white-space" "pre", style "padding-right" "20px" ]
+            [ text <| String.replace "top/" "" selection ]
         ]
 
 
