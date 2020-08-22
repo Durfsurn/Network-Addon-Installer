@@ -91,6 +91,7 @@ type Msg
       -- Model Mutators
     | ChangeLocationOption String
     | ChangeExePath String
+    | ChangeInstallLocation String
     | CheckExePath
     | SelectExePath
     | SelectPlugins
@@ -321,6 +322,9 @@ update message model =
             in
             ( { model | sc4_location_option = option, sc4_location = path }, Cmd.none )
 
+        ChangeInstallLocation loc ->
+            ( { model | install_location = loc }, Cmd.none )
+
         GotExePathStatus resp ->
             case resp of
                 RemoteData.Success r ->
@@ -417,11 +421,11 @@ update message model =
                         hide_list =
                             getParents r
 
-                        select_list =
-                            getSelected r
-
                         locked_options =
                             getLocked r
+
+                        select_list =
+                            getSelected r locked_options
                     in
                     ( { model
                         | installer_options = res
@@ -438,7 +442,7 @@ update message model =
                     ( { model | installer_options = res }, Cmd.none )
 
         Install ->
-            ( model, sendInstallList model.select_list model.install_location )
+            ( model, sendInstallList (LExtra.remove "/Network Addon Mod" model.select_list) model.install_location )
 
         InstallProgress progress ->
             case progress of
@@ -594,11 +598,22 @@ getId option =
         ++ (List.map (\c -> getId c.children) (unwrapInstallerOption option) |> List.concat)
 
 
-getSelected : InstallerOption -> List String
-getSelected option =
+getSelected : InstallerOption -> List String -> List String
+getSelected option locked_list =
     LExtra.unique <|
-        (List.map (\i -> i.parent ++ "/" ++ i.name) <| List.filter (\i -> i.radio_check == Checked || i.radio_check == RadioChecked) (unwrapInstallerOption option))
-            ++ (List.concat <| List.map (\l -> getSelected l.children) (unwrapInstallerOption option))
+        (List.map (\i -> i.parent ++ "/" ++ i.name) <|
+            List.filter (\i -> i.radio_check == Checked || i.radio_check == RadioChecked || i.radio_check == Locked) <|
+                List.map
+                    (\o ->
+                        if List.member o.parent locked_list then
+                            { o | radio_check = Locked }
+
+                        else
+                            o
+                    )
+                    (unwrapInstallerOption option)
+        )
+            ++ (List.concat <| List.map (\l -> getSelected l.children locked_list) (unwrapInstallerOption option))
 
 
 getLocked : InstallerOption -> List String
@@ -802,7 +817,7 @@ displayInstaller model =
                     []
                 , div [ class "modal-card", style "min-width" "75%" ]
                     [ section [ class "modal-card-body" ]
-                        [ div [] <| List.map displayOptionNames <| List.sort model.select_list
+                        [ div [] <| List.map displayOptionNames <| LExtra.remove "/Network Addon Mod" <| List.sort model.select_list
                         ]
                     , button [ class "modal-close is-large", onClick HideInstallItems ] []
                     ]
@@ -816,7 +831,7 @@ displayInstaller model =
                     [ section [ class "modal-card-body" ]
                         [ div []
                             [ label [ class "label" ] [ text "Install Location" ]
-                            , input [ class "input is-4", value model.install_location ] []
+                            , input [ class "input is-4", value model.install_location, onInput ChangeInstallLocation ] []
                             ]
                         , br [] []
                         , div [ class "has-addons buttons" ]

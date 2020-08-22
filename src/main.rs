@@ -61,6 +61,13 @@ fn calculate_folders(strs: &mut Vec<String>) -> Vec<String> {
 static mut CHECKED_EXE: bool = false;
 static mut PATCHED_EXE: bool = false;
 
+// List of cleaned files
+static mut CLEANED_FILE_PCT: u8 = 0;
+static mut CLEANED_FILE_LIST: &'static [&'static str] = &[];
+// List of installed files
+static mut INSTALLED_FILE_PCT: u8 = 0;
+static mut INSTALLED_FILE_LIST: &'static [&'static str] = &[];
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {    
     let windows = os_info::get().os_type().to_string().to_lowercase() == "windows";
@@ -71,7 +78,7 @@ async fn main() -> anyhow::Result<()> {
 
 
     let file_list: Vec<String> = calculate_folders(InstallAsset::iter().map(|asset| asset.to_string()).collect::<Vec<String>>().as_mut());
-
+    
     let uuid = uuid::Uuid::new_v4().to_hyphenated();
 
     for folder in file_list.iter().filter(|f| f.ends_with("/")) {
@@ -300,6 +307,8 @@ struct InstallConfig {
 async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<Vec<InstallerOption>>)) -> Result<impl warp::Reply> {
     let options = flatten_installer_options(options);
     std::thread::spawn(move || {
+
+        // Retrieve the files from the binary
         let mut chosen_options: Vec<InstallerOption> = Vec::new();
         for file in install_config.files_to_install {
             let opt: Vec<InstallerOption> = options.iter().filter(|o| format!("{}/{}", o.parent, o.name.clone()) == file).map(|o| o.to_owned()).collect();
@@ -310,13 +319,64 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
                 continue
             }
         };
-        println!("{:#?}", chosen_options.iter().map(|o| format!("{}/{}", o.parent, o.name.clone())).collect::<Vec<String>>());            
+        let files_to_install = chosen_options.iter()
+            .filter(|o| o.children.len() == 0)
+            .map(|o| format!("{}/{}", o.location.clone(), o.original_name.clone()))
+            .collect::<Vec<String>>()
+        ;
+
+        let file_list: Vec<String> = InstallAsset::iter().map(|asset| asset.to_string()).filter(|f| f.contains(".dat")).collect();
+
+        for file_name in files_to_install {
+            let file_name = file_name.replace("installation/", "");
+            println!("File Name: {:#?}", file_name);  
+            
+            let filtered_file_list: Vec<&String> = file_list.iter().filter(|f| f.contains(&file_name)).collect();
+            
+            for file in filtered_file_list {
+                let file_data = InstallAsset::get(file);
+                match file_data {
+                    Some(f) => {
+                        info!("Retrieved file: {}", file);
+                        let splits = file.split("/").collect::<Vec<&str>>();
+                        let folder = format!("{}/{}", 
+                            install_config.location, 
+                            prettify_folder_name(splits[..splits.len()-1].join("/"))
+                        );
+                        let file_location = format!("{}/{}/{}", 
+                            install_config.location, 
+                            prettify_folder_name(splits[..splits.len()-1].join("/")), 
+                            prettify_folder_name(splits[splits.len()-1..].concat())
+                        );
+
+                        std::fs::create_dir_all(folder).unwrap_or_else(|e| warn!("Couldn't create install directories: {}", e.to_string()));
+
+                        match std::fs::write(&file_location, f) {
+                            Ok(_) => {
+                                info!("Successfully wrote file: {}", &file_location);
+                            }
+                            Err(e) => {
+                                warn!("Couldn't write file: {} because {}", &file_location, e.to_string());
+                                continue;
+                            }
+                        };
+                    },
+                    None => {
+                        warn!("Couldn't retrieve file: {}", file);
+                        continue;
+                    }                        
+                };
+            };
+        };
     });
 
     Ok(serde_json::json!(
-        { "percent" : 0.0
+        { "percent_cleaning" : 0.0
+        , "percent_installed" : 0.0
         , "done" : false
+        , "files_cleaned" : []
         , "files_copied" : []
+        , "cleaning" : true
         }
     ).to_string())
 }
@@ -565,14 +625,35 @@ impl RadioCheck {
         }
     }
 }
+
+fn prettify_folder_name(s: String) -> String {
+    s
+        .replace("$1", "")
+        .replace("$2", "")
+        .replace("$3", "")
+        .replace("$4", "")
+        .replace("$5", "")
+        .replace("$6", "")
+        .replace("$7", "")
+        .replace("$8", "")
+        .replace("$9", "")
+        .replace("^", "")
+        .replace("+", "")
+        .replace("=", "")
+        .replace("#", "")
+        .replace("!", "")
+        .replace("~", "")
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Ord, PartialOrd, Eq)]
 struct InstallerOption {
     name: String,
     original_name: String,
+    location: String,
     radio_check: RadioCheck,
     children: Vec<InstallerOption>,
     depth: u16,
-    parent: String
+    parent: String,
 }
 impl InstallerOption {
     fn new(original_name: String, radio_check: RadioCheck) -> anyhow::Result<Self>{
@@ -597,6 +678,7 @@ impl InstallerOption {
         Ok(InstallerOption {
             name,
             original_name,
+            location: "".into(),
             radio_check,
             children: Vec::new(),
             depth: 0,
@@ -608,6 +690,7 @@ impl InstallerOption {
         InstallerOption {
             name: self.name.clone(),
             original_name: self.original_name.clone(),
+            location: self.location.clone(),
             radio_check: self.radio_check.clone(),
             children: children.to_vec(),
             depth: self.depth.clone(),
@@ -619,10 +702,10 @@ impl InstallerOption {
 fn folder_structure(dir: &str) -> anyhow::Result<InstallerOption> {
     let options = InstallerOption::new("Network Addon Mod".to_string(), RadioCheck::new("Locked")?)?;
     
-    Ok(options.push_children(parse_folder(dir, 0, "top")?.as_mut()))
+    Ok(options.push_children(parse_folder(dir, 0, "top", "installation")?.as_mut()))
 }
 
-fn parse_folder(dir: &str, parent_depth: u16, parent_name: &str) -> anyhow::Result<Vec<InstallerOption>> {
+fn parse_folder(dir: &str, parent_depth: u16, parent_name: &str, original_parent_name: &str) -> anyhow::Result<Vec<InstallerOption>> {
     let files = std::fs::read_dir(dir)?;
     let mut options = Vec::new();
 
@@ -637,7 +720,13 @@ fn parse_folder(dir: &str, parent_depth: u16, parent_name: &str) -> anyhow::Resu
                         let mut local_option = InstallerOption::new(f_n.to_string(), RadioCheck::determine(&f_n))?;
                         local_option.depth = parent_depth + 1;
                         local_option.parent = parent_name.into();
-                        let mut children = parse_folder(&e.path().to_str().unwrap(), parent_depth + 1, &format!("{}/{}", parent_name, &local_option.name))?;
+                        local_option.location = original_parent_name.into();
+                        let mut children = parse_folder(
+                            &e.path().to_str().unwrap(), 
+                            parent_depth + 1, 
+                            &format!("{}/{}", parent_name, &local_option.name),
+                            &format!("{}/{}", original_parent_name, &local_option.original_name)                            
+                        )?;
                         local_option.push_children(children.as_mut())
                     }
                     else {
