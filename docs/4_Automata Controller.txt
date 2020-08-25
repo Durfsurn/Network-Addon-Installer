@@ -1,1 +1,0 @@
-Installs Automata Controller options, affecting the display of in-game vehicles (Automata).  Please note that the Automata will still disappear under any setting--this is part of the game.

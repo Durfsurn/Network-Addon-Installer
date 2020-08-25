@@ -1,1 +1,0 @@
-Installs the Rural Roads Plugin (RuRP), which adds rural-oriented cosmetic puzzle pieces to the Road network.

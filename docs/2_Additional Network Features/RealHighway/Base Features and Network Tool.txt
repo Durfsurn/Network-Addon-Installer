@@ -1,1 +1,0 @@
-Installs mandatory core files for the RealHighway (RHW) system, including the base RHW-2 network tool.

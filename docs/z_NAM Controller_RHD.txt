@@ -1,1 +1,0 @@
-Installs NAM Controller for Right-Hand Driving (vehicles drive on RIGHT).  Essential for NAM network addition functionality.  Full controller build--for smaller controller build, run Controller Compiler manually (included in installation .zip package).  DOES NOT CHANGE DRIVE SIDE.

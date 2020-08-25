@@ -635,7 +635,7 @@ FARR_Button.dat
 g_t-stack_interchanges.dat
 GHSR_Plugin.dat
 GHSR_Preview.dat
-Göltzschtalbrucke.dat
+GÃ¶ltzschtalbrucke.dat
 Goeltzschtalbruecke.dat
 h_FAMHW.dat
 HSR_Core.dat

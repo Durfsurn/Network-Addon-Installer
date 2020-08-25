@@ -1,1 +1,0 @@
-Installs proper support for US/North American or Euro/International textures, in either RHD (Right-Hand Driving) or LHD (Left-Hand Driving) form.  Please note that these options DO NOT CHANGE DRIVE SIDE.

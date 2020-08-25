@@ -2,3 +2,6 @@
 elm/elm-stuff/**
 installation
 test
+Plugins_bak
+Plugins
+*.log

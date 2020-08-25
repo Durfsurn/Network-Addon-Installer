@@ -1,1 +1,0 @@
-Installs options for the RealHighway (RHW) networks.  The RHW system adds a multitude of variable width highway networks with modular interchange functionality (as opposed to Maxis-style plop interchanges), allowing for more complex and realistically-scaled highway systems.

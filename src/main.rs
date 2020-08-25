@@ -6,14 +6,12 @@ use percent_encoding;
 use rust_embed::RustEmbed;
 use std::path::Path;
 use os_info;
-
-#[derive(RustEmbed)]
-#[folder = "docs"]
-struct DocAsset;
-#[derive(RustEmbed)]
-#[folder = "images"]
-struct ImageAsset;
-
+use log::LevelFilter;
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Config, Root};
+use std::env;
+use env_logger::Builder;
 #[derive(RustEmbed)]
 #[folder = "installation/"]
 struct InstallAsset;
@@ -27,6 +25,7 @@ const FAVICON_PNG: &[u8] = include_bytes!("../static/favicon.png");
 const FAVICON_ICO: &[u8] = include_bytes!("../static/favicon.ico");
 const CONFIG: &str = include_str!("../configuration.json");
 const FOUR_GB: &[u8] = include_bytes!("../static/4gb_patch.exe");
+const CLEANUP: &str = include_str!("../static/cleanup.txt");
 
 fn rust_version() -> String {
     env!("CARGO_PKG_VERSION").into()
@@ -62,22 +61,48 @@ static mut CHECKED_EXE: bool = false;
 static mut PATCHED_EXE: bool = false;
 
 // List of cleaned files
-static mut CLEANED_FILE_PCT: u8 = 0;
+static mut CLEANED_FILE_COUNT: usize = 0;
+static mut CLEANED_FILE_MAX: usize = 0;
 static mut CLEANED_FILE_LIST: &'static [&'static str] = &[];
 // List of installed files
-static mut INSTALLED_FILE_PCT: u8 = 0;
+static mut INSTALLED_FILE_COUNT: usize = 0;
+static mut INSTALLED_FILE_MAX: usize = 0;
 static mut INSTALLED_FILE_LIST: &'static [&'static str] = &[];
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {    
+async fn main() -> anyhow::Result<()> {   
+    let mut config: Configuration = serde_json::from_str(CONFIG)?;
+    // env_logger::init();
+
+    // if cfg!(debug_assertions) {
+    //     Builder::new()
+    //         .parse_filters("RUST_LOG=info") // lock in info level logging for the file on debug compile but not for release.
+    //         .init()
+    //     ;
+    // };   
+
+    let logfile = FileAppender::builder()
+        .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
+        .build(format!("NAM Installer v{}.log", &config.nam_version))?
+    ;
+
+    let b_config = Config::builder()
+        .appender(Appender::builder().build("logfile", Box::new(logfile)))
+        .build(Root::builder()
+            .appender("logfile")
+            .build(LevelFilter::Info)
+        )?
+    ;
+
+    log4rs::init_config(b_config)?; 
+
     let windows = os_info::get().os_type().to_string().to_lowercase() == "windows";
 
-    env_logger::init();
-    let mut config: Configuration = serde_json::from_str(CONFIG)?;
     config.windows = windows;
 
+    let asset_iter = InstallAsset::iter();
 
-    let file_list: Vec<String> = calculate_folders(InstallAsset::iter().map(|asset| asset.to_string()).collect::<Vec<String>>().as_mut());
+    let file_list: Vec<String> = calculate_folders(asset_iter.map(|asset| asset.to_string()).collect::<Vec<String>>().as_mut());
     
     let uuid = uuid::Uuid::new_v4().to_hyphenated();
 
@@ -90,7 +115,18 @@ async fn main() -> anyhow::Result<()> {
         ].to_vec()
     ;
     let arc_folder_structure = std::sync::Arc::new(folder_structure.clone());
-
+        
+    let arc_docs_list: std::sync::Arc<Vec<String>> = std::sync::Arc::new(InstallAsset::iter()
+        .map(|f| f.to_string())
+        .filter(|f| f.contains(".txt"))
+        .collect()
+    );
+    let arc_images_list: std::sync::Arc<Vec<String>> = std::sync::Arc::new(InstallAsset::iter()
+        .map(|f| f.to_string())
+        .filter(|f| f.contains(".jpg") || f.contains(".png"))
+        .collect()
+    );
+    
     std::fs::remove_dir_all(format!("{}", uuid))?;
 
     info!("{:#?}", config);
@@ -115,7 +151,16 @@ async fn main() -> anyhow::Result<()> {
 
     let get_docs = warp::get()
         .and(warp::path!("docs" / String))
+        .map(move |path: String| 
+            (path.clone(), arc_docs_list.clone())
+        )
         .and_then(load_local_file)
+        .boxed()
+    ;
+
+    let get_install_status = warp::get()
+        .and(warp::path!("install_status"))
+        .and_then(load_install_status)
         .boxed()
     ;
 
@@ -139,6 +184,9 @@ async fn main() -> anyhow::Result<()> {
 
     let get_images = warp::get()
         .and(warp::path!("images" / String))
+        .map(move |path: String| 
+            (path.clone(), arc_images_list.clone())
+        )
         .and_then(load_local_image)
         .boxed()
     ;
@@ -183,6 +231,7 @@ async fn main() -> anyhow::Result<()> {
     .and(
         get_static
         .or(get_structure)
+        .or(get_install_status)
         .or(get_docs)
         .or(get_images)
         .or(get_plugins_location)
@@ -305,80 +354,141 @@ struct InstallConfig {
     location: String 
 }
 async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<Vec<InstallerOption>>)) -> Result<impl warp::Reply> {
-    let options = flatten_installer_options(options);
-    std::thread::spawn(move || {
+    if !&install_config.location.ends_with("Plugins") {
+        Err(Error::Custom("Install Location must end in a folder called `Plugins`".to_string()).into())
+    }
+    else {
+        let options = flatten_installer_options(options);
+        std::thread::spawn(move || {
+            // Clean Out old files (Cleanitol)
+            let files_to_move = CLEANUP.lines().map(|f| f.to_owned()).collect::<Vec<String>>();
+            let plugins_dir = walkdir::WalkDir::new(&install_config.location);
+            std::fs::create_dir(&install_config.location.replace("Plugins", "Plugins_bak"))
+                .unwrap_or_else(|e| warn!("Unable to create plugins_bak dir: {}", e.to_string()))
+            ;
+            let max_clean = files_to_move.len();
 
-        // Retrieve the files from the binary
-        let mut chosen_options: Vec<InstallerOption> = Vec::new();
-        for file in install_config.files_to_install {
-            let opt: Vec<InstallerOption> = options.iter().filter(|o| format!("{}/{}", o.parent, o.name.clone()) == file).map(|o| o.to_owned()).collect();
-            if opt.len() > 0 {
-                chosen_options.push(opt[0].clone())
-            }
-            else {
-                continue
-            }
-        };
-        let files_to_install = chosen_options.iter()
-            .filter(|o| o.children.len() == 0)
-            .map(|o| format!("{}/{}", o.location.clone(), o.original_name.clone()))
-            .collect::<Vec<String>>()
-        ;
+            for (count, file) in plugins_dir.into_iter().enumerate() {
+                match &file {
+                    Ok(f) => {                            
+                        let f_n = f.file_name().to_string_lossy().to_string();
+                        
+                        if files_to_move.contains(&f_n) {
+                            let possible_dir = &f.path().to_string_lossy().to_string()
+                                .replace(&format!("/{}", &f.path().file_name().unwrap().to_string_lossy().to_string()), "")
+                                .replace("Plugins", "Plugins_bak")
+                            ;
+                            
+                            std::fs::create_dir_all(possible_dir).unwrap_or_else(|e| warn!("Unable to create dir in plugins_bak because: {}.", e.to_string()));
 
-        let file_list: Vec<String> = InstallAsset::iter().map(|asset| asset.to_string()).filter(|f| f.contains(".dat")).collect();
-
-        for file_name in files_to_install {
-            let file_name = file_name.replace("installation/", "");
-            println!("File Name: {:#?}", file_name);  
-            
-            let filtered_file_list: Vec<&String> = file_list.iter().filter(|f| f.contains(&file_name)).collect();
-            
-            for file in filtered_file_list {
-                let file_data = InstallAsset::get(file);
-                match file_data {
-                    Some(f) => {
-                        info!("Retrieved file: {}", file);
-                        let splits = file.split("/").collect::<Vec<&str>>();
-                        let folder = format!("{}/{}", 
-                            install_config.location, 
-                            prettify_folder_name(splits[..splits.len()-1].join("/"))
-                        );
-                        let file_location = format!("{}/{}/{}", 
-                            install_config.location, 
-                            prettify_folder_name(splits[..splits.len()-1].join("/")), 
-                            prettify_folder_name(splits[splits.len()-1..].concat())
-                        );
-
-                        std::fs::create_dir_all(folder).unwrap_or_else(|e| warn!("Couldn't create install directories: {}", e.to_string()));
-
-                        match std::fs::write(&file_location, f) {
-                            Ok(_) => {
-                                info!("Successfully wrote file: {}", &file_location);
-                            }
-                            Err(e) => {
-                                warn!("Couldn't write file: {} because {}", &file_location, e.to_string());
-                                continue;
-                            }
-                        };
+                            match std::fs::rename(f.path(), f.path().to_string_lossy().to_string().replace("Plugins", "Plugins_bak"))
+                            {
+                                Ok(_) => info!("Successfully moved file: {} to plugins_bak", &f_n),
+                                Err(e) => warn!("Unable to move file: {}, to plugins_bak: {}", &f_n, e.to_string())
+                            };
+                        }
+                        else {
+                            continue
+                        }
                     },
-                    None => {
-                        warn!("Couldn't retrieve file: {}", file);
-                        continue;
-                    }                        
+                    Err(e) => {
+                        warn!("{}", e.to_string());
+                        continue
+                    }
+                }
+                unsafe {
+                    let count = count + 1;
+                    CLEANED_FILE_COUNT = count;
+                    CLEANED_FILE_MAX = max_clean;
+                    CLEANED_FILE_LIST.to_vec()
+                        .push(file.unwrap()
+                            .file_name()
+                            .to_string_lossy()
+                            .to_string()
+                            .as_str()
+                    );
                 };
             };
-        };
-    });
+            panic!();
+            // Retrieve the files from the binary
+            let mut chosen_options: Vec<InstallerOption> = Vec::new();
+            for file in install_config.files_to_install {
+                let opt: Vec<InstallerOption> = options.iter().filter(|o| format!("{}/{}", o.parent, o.name.clone()) == file).map(|o| o.to_owned()).collect();
+                if opt.len() > 0 {
+                    chosen_options.push(opt[0].clone())
+                }
+                else {
+                    continue
+                }
+            };
+            let files_to_install = chosen_options.iter()
+                .filter(|o| o.children.len() == 0)
+                .map(|o| format!("{}/{}", o.location.clone(), o.original_name.clone()))
+                .collect::<Vec<String>>()
+            ;
 
-    Ok(serde_json::json!(
-        { "percent_cleaning" : 0.0
-        , "percent_installed" : 0.0
-        , "done" : false
-        , "files_cleaned" : []
-        , "files_copied" : []
-        , "cleaning" : true
-        }
-    ).to_string())
+            let file_list: Vec<String> = InstallAsset::iter().map(|asset| asset.to_string()).filter(|f| f.contains(".dat")).collect();
+
+            let max_install = files_to_install.len();
+            for (count, file_name) in files_to_install.iter().enumerate() {
+                let file_name = file_name.replace("installation/", "");
+                // println!("File Name: {:#?}", file_name);  
+                
+                let filtered_file_list: Vec<&String> = file_list.iter().filter(|f| f.contains(&file_name)).collect();
+                
+                for file in filtered_file_list {
+                    let file_data = InstallAsset::get(file);
+                    match file_data {
+                        Some(f) => {
+                            info!("Retrieved file: {}", file);
+                            let splits = file.split("/").collect::<Vec<&str>>();
+                            let folder = format!("{}/{}", 
+                                &install_config.location, 
+                                prettify_folder_name(splits[..splits.len()-1].join("/"))
+                            );
+                            let file_location = format!("{}/{}/{}", 
+                                install_config.location, 
+                                prettify_folder_name(splits[..splits.len()-1].join("/")), 
+                                prettify_folder_name(splits[splits.len()-1..].concat())
+                            );
+
+                            std::fs::create_dir_all(folder).unwrap_or_else(|e| warn!("Couldn't create install directories: {}", e.to_string()));
+
+                            match std::fs::write(&file_location, f) {
+                                Ok(_) => {
+                                    info!("Successfully wrote file: {}", &file_location);
+                                }
+                                Err(e) => {
+                                    warn!("Couldn't write file: {} because {}", &file_location, e.to_string());
+                                    continue;
+                                }
+                            };
+                        },
+                        None => {
+                            warn!("Couldn't retrieve file: {}", file);
+                            continue;
+                        }                        
+                    };
+                };           
+                unsafe {
+                    let count = count + 1;
+                    INSTALLED_FILE_COUNT = count;
+                    INSTALLED_FILE_MAX = max_install;
+                    INSTALLED_FILE_LIST.to_vec().push(file_name.as_str());
+                };
+            };
+        });
+
+        Ok(serde_json::json!(
+            { "cleaning_count" : 0.0
+            , "cleaning_max" : 0.0
+            , "installed_count" : 0.0
+            , "installed_max" : 0.0
+            , "files_cleaned" : []
+            , "files_copied" : []
+            }
+        ).to_string())
+    }
 }
 
 async fn patch_exe_windows(path: String) -> Result<impl warp::Reply> {
@@ -461,30 +571,60 @@ async fn find_plugins() -> Result<impl warp::Reply> {
     get_def_plugins().await
 }
 
-async fn load_local_file(file_name: String) -> Result<impl warp::Reply> {
+async fn load_install_status() -> Result<impl warp::Reply> {
+    unsafe { 
+        Ok(serde_json::json!(
+            { "cleaning_count" : CLEANED_FILE_COUNT
+            , "cleaning_max" : CLEANED_FILE_MAX
+            , "installed_count" : INSTALLED_FILE_COUNT
+            , "installed_max" : INSTALLED_FILE_MAX
+            , "files_cleaned" : []
+            , "files_copied" : []
+            }
+        ).to_string())
+    }
+}
+
+async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<Vec<String>>)) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
-    let name = format!("{}.txt", name);
     let name = if name.starts_with("/") {
         name[1..].to_string()
     }
     else {
         name
     };
-    
-    info!("Loading {}", name);
+    let name = format!("{}.txt", name).replace("installation/", "");  
 
-    let f: Vec<u8> = match DocAsset::get(&name) {
-        Some(file) => file.into(),
+    let f = match InstallAsset::get(&name) {
+        Some(file) => String::from_utf8_lossy(file.as_ref()).to_string(),
         None => {
-            warn!("Unable to retrieve file: {}", &name);
-            Vec::new()
+            let unknown_file = name.replace(".txt", "");
+            println!("{:#?}", unknown_file);
+            
+            let possible_files = asset_list.iter()
+                .map(|f| f.to_owned())
+                .filter(|f| f.contains(&unknown_file))
+                .collect::<Vec<String>>()
+            ;
+            if possible_files.len() == 0 {
+               warn!("No files found in: {}", &unknown_file);
+               "".to_string()
+            }
+            else {
+                match InstallAsset::get(possible_files[0].as_str()) {
+                    Some(txt) => String::from_utf8_lossy(txt.as_ref()).to_string(),
+                    None => {
+                        warn!("Unable to retrieve files in folder: {}", &unknown_file);
+                        "".to_string()
+                    }
+                }
+            }
         }
     };
 
-    let str_f = String::from_utf8_lossy(f.as_ref()).to_string();
-    Ok(str_f)
+    Ok(f)
 }
-async fn load_local_image(file_name: String) -> Result<impl warp::Reply> {
+async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<Vec<String>>)) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
     let name = if name.starts_with("/") {
         name[1..].to_string()
@@ -492,12 +632,28 @@ async fn load_local_image(file_name: String) -> Result<impl warp::Reply> {
     else {
         name
     };
+    let name = format!("{}.png", name).replace("installation/", "");  
 
-    info!("Loading {}", name);
-
-    let f = match ImageAsset::get(&name) {
+    let f = match InstallAsset::get(&name) {
         Some(file) => Ok(file),
-        None => Err(Error::Custom(format!("Unable to retrieve file: {}", &name)))
+        None => {
+            let unknown_file = name.replace(".png", "");
+            let possible_files = asset_list.iter()
+                .map(|f| f.to_owned())
+                .filter(|f| f.contains(&unknown_file))
+                .collect::<Vec<String>>()
+            ;
+            if possible_files.len() == 0 {
+                Err(Error::Custom("No files found".to_string()))
+            }
+            else {
+                let full_docs = possible_files.join("\n");
+                match InstallAsset::get(full_docs.as_str()) {
+                    Some(img) => Ok(img),
+                    None => Err(Error::Custom(format!("Unable to retrieve any images in folder: {}", &unknown_file)))
+                }
+            }
+        }
     }?;
 
     let bytes_f: Vec<u8> = f.into();
@@ -553,6 +709,8 @@ pub enum Error {
     Custom(String),
     #[error("Forbidden")]
     Forbidden,
+    #[error("IO: {0}")]
+    IO(#[from] std::io::Error),
 }
 impl warp::reject::Reject for Error {}
 
@@ -617,11 +775,11 @@ impl RadioCheck {
         else if s.ends_with("#") {
             RadioCheck::RadioFolder
         }
-        else if s.ends_with("*") {
-            RadioCheck::Checked
+        else if s.ends_with("!") {
+            RadioCheck::Unchecked
         }
         else {
-            RadioCheck::Unchecked
+            RadioCheck::Checked
         }
     }
 }
@@ -643,6 +801,7 @@ fn prettify_folder_name(s: String) -> String {
         .replace("#", "")
         .replace("!", "")
         .replace("~", "")
+        .replace("*", "")
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Ord, PartialOrd, Eq)]
@@ -673,6 +832,7 @@ impl InstallerOption {
             .replace("#", "")
             .replace("!", "")
             .replace("~", "")
+            .replace("*", "")
         ;
 
         Ok(InstallerOption {

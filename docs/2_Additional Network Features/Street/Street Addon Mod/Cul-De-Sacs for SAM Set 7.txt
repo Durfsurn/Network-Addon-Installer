@@ -1,1 +1,0 @@
-Installs Cul-De-Sac support for SAM Set 7 (Asphalt Streets).

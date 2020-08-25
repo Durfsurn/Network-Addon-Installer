@@ -1,1 +1,0 @@
-Installs miscellaneous options, including Hole Diggers/Raisers, Extended Station Queries, and updated stats for Maxis Transit Lots.

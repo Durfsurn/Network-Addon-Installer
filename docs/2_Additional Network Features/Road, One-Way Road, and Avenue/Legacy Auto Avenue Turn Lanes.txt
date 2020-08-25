@@ -1,1 +1,0 @@
-Installs the legacy automatic turn lanes for the Avenue network, which will cause turn lanes to automatically appear at Avenue x Avenue +-intersections.

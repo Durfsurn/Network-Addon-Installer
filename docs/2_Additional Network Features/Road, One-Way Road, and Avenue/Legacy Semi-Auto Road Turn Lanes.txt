@@ -1,1 +1,0 @@
-Installs the legacy semi-automatic turn lanes for the Road network, which will cause turn lanes to appear at Road x Road + and T-intersections, when clicked over with the One-Way Road (OWR) tool.  (Note that the original automatic turn lanes for the Road network are no longer available, due to severe conflicts with many NAM features added post-2010.)

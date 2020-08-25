@@ -10,7 +10,9 @@ import Json.Decode.Pipeline as JsonP
 import Json.Encode as Encode
 import List
 import List.Extra as LExtra
+import Process
 import RemoteData exposing (WebData)
+import Task
 
 
 type ExpandCollapse
@@ -65,6 +67,7 @@ type alias Model =
     , modal : Bool
     , modal_text : String
     , loading : Bool
+    , docs_loading : Bool
     , sc4_location : String
     , sc4_location_option : String
     , install_location : String
@@ -77,10 +80,11 @@ type Msg
     = ReceiveStructure (WebData InstallerOption)
     | ReceiveDocs (WebData String)
     | ReceivePluginsLocation (WebData String)
-    | SelectDocs String
+    | SelectDocs ( String, String )
     | InstallProgress (WebData InstallProgression)
     | GotExePathStatus (WebData ExeResponse)
     | GotExePatchStatus (WebData PatchResponse)
+    | ProgressTick
       -- Select List Mutators
     | ToggleExpand ExpandCollapse String
     | AddCheckOption ( String, String )
@@ -113,6 +117,7 @@ init flags =
     ( { flags = flags
       , state = Default
       , loading = False
+      , docs_loading = False
       , modal = False
       , modal_text = ""
       , installer_options = RemoteData.Loading
@@ -218,6 +223,8 @@ radioCheckFromString =
 
 type alias OptionNode =
     { name : String
+    , original_name : String
+    , location : String
     , radio_check : RadioCheck
     , children : InstallerOption
     , depth : Int
@@ -233,6 +240,8 @@ decodeOptionNode : Decoder OptionNode
 decodeOptionNode =
     Decode.succeed OptionNode
         |> JsonP.required "name" Decode.string
+        |> JsonP.required "original_name" Decode.string
+        |> JsonP.required "location" Decode.string
         |> JsonP.required "radio_check" radioCheckFromString
         |> JsonP.optional "children" (Decode.lazy (\_ -> decodeInstallerOption)) (InstallerOption [])
         |> JsonP.required "depth" Decode.int
@@ -280,8 +289,8 @@ update message model =
         ViewInstallList ->
             ( { model | state = ViewInstallItems }, Cmd.none )
 
-        SelectDocs id ->
-            ( { model | selected = id, image = id }, fetchDocs id )
+        SelectDocs ( location, id ) ->
+            ( { model | selected = id, image = location, docs_loading = True }, fetchDocs location )
 
         ImageError ->
             ( { model | image = "Network Addon Mod" }, Cmd.none )
@@ -353,7 +362,7 @@ update message model =
                     ( model, Cmd.none )
 
         ReceiveDocs string ->
-            ( { model | docs = RemoteData.unwrap "" identity string }, Cmd.none )
+            ( { model | docs = RemoteData.unwrap "" identity string, docs_loading = False }, Cmd.none )
 
         ReceivePluginsLocation string ->
             ( { model | install_location = RemoteData.unwrap "" identity string, loading = False }, Cmd.none )
@@ -444,13 +453,41 @@ update message model =
         Install ->
             ( model, sendInstallList (LExtra.remove "/Network Addon Mod" model.select_list) model.install_location )
 
+        ProgressTick ->
+            ( model, getProgress )
+
         InstallProgress progress ->
             case progress of
                 RemoteData.Success pr ->
-                    ( { model | progress = Just pr }, Cmd.none )
+                    let
+                        _ =
+                            Debug.log "" pr
+                    in
+                    ( { model | progress = Just pr }
+                    , --  if pr.installed_count == pr.installed_max then
+                      --     Cmd.none
+                      --   else
+                      delay
+                        1000
+                        ProgressTick
+                    )
 
                 _ ->
                     ( model, Cmd.none )
+
+
+delay : Float -> msg -> Cmd msg
+delay time msg =
+    Process.sleep time
+        |> Task.perform (\_ -> msg)
+
+
+getProgress : Cmd Msg
+getProgress =
+    Http.get
+        { url = "/install_status"
+        , expect = Http.expectJson (RemoteData.fromResult >> InstallProgress) decodeInstallProgress
+        }
 
 
 sendInstallList : List String -> String -> Cmd Msg
@@ -471,8 +508,11 @@ encodeInstallList selections location =
 
 
 type alias InstallProgression =
-    { percent : Float
-    , done : Bool
+    { cleaning_count : Float
+    , cleaning_max : Float
+    , installed_count : Float
+    , installed_max : Float
+    , files_cleaned : List String
     , files_copied : List String
     }
 
@@ -480,8 +520,11 @@ type alias InstallProgression =
 decodeInstallProgress : Decoder InstallProgression
 decodeInstallProgress =
     Decode.succeed InstallProgression
-        |> JsonP.required "percent" Decode.float
-        |> JsonP.required "done" Decode.bool
+        |> JsonP.required "cleaning_count" Decode.float
+        |> JsonP.required "cleaning_max" Decode.float
+        |> JsonP.required "installed_count" Decode.float
+        |> JsonP.required "installed_max" Decode.float
+        |> JsonP.required "files_cleaned" (Decode.list Decode.string)
         |> JsonP.required "files_copied" (Decode.list Decode.string)
 
 
@@ -496,6 +539,8 @@ lookupNodeFromId id nodes =
         |> List.head
         |> Maybe.withDefault
             { name = "ERROR"
+            , original_name = "ERROR"
+            , location = "ERROR"
             , radio_check = Locked
             , children = InstallerOption []
             , depth = -100
@@ -789,10 +834,16 @@ displayInstaller model =
                 , div [ class "is-half tile is-ancestor", style "max-height" height_, style "overflow-y" "auto", style "min-height" height_, style "width" "50vw" ]
                     [ section [ class "section" ]
                         [ div [ class "tile is-vertical" ]
-                            [ div [ class "tile is-child", style "min-height" "30vh" ] [ p [] [ text model.docs ] ]
+                            [ div [ class "tile is-child", style "min-height" "30vh" ]
+                                [ if model.docs_loading then
+                                    button [ class "button is-loading is-large is-fullwidth invisible is-outlined " ] []
+
+                                  else
+                                    p [ style "whitespace" "pre" ] [ text model.docs ]
+                                ]
                             , div [ class "tile is-child" ]
                                 [ img
-                                    [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F") ++ ".png")
+                                    [ src ("images/" ++ (String.replace "top/" "" model.image |> String.replace "/" "%2F"))
                                     , on "error" (Decode.succeed ImageError)
                                     ]
                                     []
@@ -976,7 +1027,7 @@ displayOptions model option =
             , td [ style "vertical-align" "middle", style "padding-left" "20px" ]
                 [ button
                     [ class "button is-small"
-                    , onClick (SelectDocs (option.parent ++ "/" ++ option.name))
+                    , onClick (SelectDocs ( option.location ++ "/" ++ option.original_name, option.parent ++ "/" ++ option.name ))
                     , name option.parent
                     , class
                         (if model.selected == (option.parent ++ "/" ++ option.name) then

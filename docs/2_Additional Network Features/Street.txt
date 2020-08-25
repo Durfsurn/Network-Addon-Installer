@@ -1,1 +1,0 @@
-Installs options for the Street network.

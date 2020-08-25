@@ -1,1 +1,0 @@
-Installs (legacy) puzzle pieces for the Monorail network at double the normal height.

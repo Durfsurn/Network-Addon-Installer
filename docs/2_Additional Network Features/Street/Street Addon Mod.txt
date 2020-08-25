@@ -1,1 +1,0 @@
-Installs the Street Addon Mod (SAM) plugin, which adds 11 cosmetic override networks based on the Street network.
