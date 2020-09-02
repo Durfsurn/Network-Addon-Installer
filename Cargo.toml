@@ -1,6 +1,6 @@
 [package]
 name = "network-addon-installer"
-version = "0.0.5"
+version = "0.0.6"
 authors = ["durfsurn"]
 edition = "2018"
 
