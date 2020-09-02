@@ -20,13 +20,16 @@ jobs:
       targetType: 'inline'
       script: 'rustup default stable-x86_64-apple-darwin'
 
-  - task: Bash@3
-    displayName: 'Build Elm'
+  - task: DownloadBuildArtifacts@0
     inputs:
-      targetType: 'inline'
-      script: |
-        chmod +x elm_compile.sh
-        ./elm_compile.sh
+      buildType: 'specific'
+      project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
+      pipeline: '7'
+      buildVersionToDownload: 'latest'
+      downloadType: 'single'
+      artifactName: 'Elm'
+      itemPattern: 'main.js'
+      downloadPath: '$(System.DefaultWorkingDirectory)/static'
     
   - task: Bash@3
     displayName: 'Build Installer'
