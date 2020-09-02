@@ -12,7 +12,14 @@ jobs:
     displayName: 'Clone submodule'
     inputs:
       targetType: 'inline'
-      script: 'git lfs clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      
+  - task: Bash@3
+  displayName: 'Build Elm'
+  inputs:
+    targetType: 'inline'
+    script: './elm_compile.sh'
+
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
@@ -24,11 +31,13 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'cargo build --release'
+
   - task: Bash@3
     displayName: 'View Installer Folder'
     inputs:
       targetType: 'inline'
       script: 'ls -la target/release'
+
 - job:
   displayName: 'Build NAM Installer for 32bit Windows'
   steps:
@@ -36,7 +45,8 @@ jobs:
     displayName: 'Clone submodule'
     inputs:
       targetType: 'inline'
-      script: 'git lfs clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
@@ -48,6 +58,7 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'cargo build --release'
+
   - task: Bash@3
     displayName: 'View Installer Folder'
     inputs:

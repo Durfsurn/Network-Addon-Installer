@@ -12,23 +12,39 @@ jobs:
     displayName: 'Clone submodule'
     inputs:
       targetType: 'inline'
-      script: 'git lfs clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
       targetType: 'inline'
       script: 'rustup default stable-x86_64-unknown-linux-gnu'
+      
+  - task: Bash@3
+  displayName: 'Build Elm'
+  inputs:
+    targetType: 'inline'
+    script: './elm_compile.sh'
+
+  - task: Bash@3
+    displayName: 'Install GTK'
+    inputs:
+      targetType: 'inline'
+      script: |
+        sudo apt-get install libgtk-3-dev
+        sudo apt install gcc-multilib
 
   - task: Bash@3
     displayName: 'Build Installer'
     inputs:
       targetType: 'inline'
       script: 'cargo build --release'
+
   - task: Bash@3
     displayName: 'View Installer Folder'
     inputs:
       targetType: 'inline'
       script: 'ls -la target/release'
+      
 - job:
   displayName: 'Build NAM Installer for 32bit Linux'
   steps:
@@ -36,7 +52,8 @@ jobs:
     displayName: 'Clone submodule'
     inputs:
       targetType: 'inline'
-      script: 'git lfs clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
@@ -44,10 +61,19 @@ jobs:
       script: 'rustup default stable-i686-unknown-linux-gnu'
 
   - task: Bash@3
+    displayName: 'Install GTK'
+    inputs:
+      targetType: 'inline'
+      script: |
+        sudo apt-get install libgtk-3-dev
+        sudo apt install gcc-multilib
+
+  - task: Bash@3
     displayName: 'Build Installer'
     inputs:
       targetType: 'inline'
       script: 'cargo build --release'
+
   - task: Bash@3
     displayName: 'View Installer Folder'
     inputs:
