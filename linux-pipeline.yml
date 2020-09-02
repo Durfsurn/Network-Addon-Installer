@@ -2,17 +2,17 @@ trigger:
 - master
 
 pool:
-  vmImage: 'windows-latest'
+  vmImage: 'ubuntu-latest'
 
 jobs: 
 - job:
-  displayName: 'Build NAM Installer for 64bit Windows'
+  displayName: 'Build NAM Installer for 64bit Linux'
   steps:
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
       targetType: 'inline'
-      script: 'rustup default stable-x86_64-pc-windows-gnu'
+      script: 'rustup default stable-x86_64-unknown-linux-gnu'
 
   - task: Bash@3
     displayName: 'Build Installer'
@@ -25,13 +25,13 @@ jobs:
       targetType: 'inline'
       script: 'ls -la target/release'
 - job:
-  displayName: 'Build NAM Installer for 32bit Windows'
+  displayName: 'Build NAM Installer for 32bit Linux'
   steps:
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
       targetType: 'inline'
-      script: 'rustup default stable-i686-pc-windows-msvc'
+      script: 'rustup default stable-i686-unknown-linux-gnu'
 
   - task: Bash@3
     displayName: 'Build Installer'
