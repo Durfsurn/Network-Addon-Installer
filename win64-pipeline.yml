@@ -5,8 +5,7 @@ pool:
   vmImage: 'windows-latest'
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Build NAM Installer for 64bit Windows'
+displayName: 'Build NAM Installer for 64bit Windows'
 - task: Bash@3
   inputs:
     displayName: 'Set Toolchain'
