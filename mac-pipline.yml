@@ -21,6 +21,7 @@ jobs:
       script: 'rustup default stable-x86_64-apple-darwin'
 
   - task: DownloadBuildArtifacts@0
+    displayName: 'Download main.js'
     inputs:
       buildType: 'specific'
       project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
@@ -29,13 +30,20 @@ jobs:
       downloadType: 'single'
       artifactName: 'Elm'
       itemPattern: 'main.js'
-      downloadPath: '$(System.DefaultWorkingDirectory)/static'
+      downloadPath: '$(System.DefaultWorkingDirectory)/static/'
+    
+  - task: Bash@3
+    displayName: 'Build Installer'
+    inputs:
+      targetType: 'inline'
+      script: 'ls -la static'
     
   - task: Bash@3
     displayName: 'Build Installer'
     inputs:
       targetType: 'inline'
       script: 'cargo build --release'
+      
   - task: Bash@3
     displayName: 'View Installer Folder'
     inputs:

@@ -19,13 +19,24 @@ jobs:
       targetType: 'inline'
       script: 'rustup default stable-x86_64-unknown-linux-gnu'
 
+  - task: DownloadBuildArtifacts@0
+    displayName: 'Download main.js'
+    inputs:
+      buildType: 'specific'
+      project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
+      pipeline: '7'
+      buildVersionToDownload: 'latest'
+      downloadType: 'single'
+      artifactName: 'Elm'
+      itemPattern: 'main.js'
+      downloadPath: '$(System.DefaultWorkingDirectory)/static/'
+    
   - task: Bash@3
-    displayName: 'Build Elm'
+    displayName: 'Build Installer'
     inputs:
       targetType: 'inline'
-      script: |
-        chmod +x elm_compile.sh
-        ./elm_compile.sh
+      script: 'ls -la static'
+  
 
   - task: Bash@3
     displayName: 'Install GTK'
@@ -62,13 +73,23 @@ jobs:
       targetType: 'inline'
       script: 'rustup default stable-i686-unknown-linux-gnu'
 
+  - task: DownloadBuildArtifacts@0
+    displayName: 'Download main.js'
+    inputs:
+      buildType: 'specific'
+      project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
+      pipeline: '7'
+      buildVersionToDownload: 'latest'
+      downloadType: 'single'
+      artifactName: 'Elm'
+      itemPattern: 'main.js'
+      downloadPath: '$(System.DefaultWorkingDirectory)/static/'
+    
   - task: Bash@3
-    displayName: 'Build Elm'
+    displayName: 'Build Installer'
     inputs:
       targetType: 'inline'
-      script: |
-        chmod +x elm_compile.sh
-        ./elm_compile.sh
+      script: 'ls -la static'
 
   - task: Bash@3
     displayName: 'Install GTK'
