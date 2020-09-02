@@ -33,10 +33,10 @@ jobs:
       downloadPath: '$(System.DefaultWorkingDirectory)/static/'
     
   - task: Bash@3
-    displayName: 'Build Installer'
+    displayName: 'Move main.js'
     inputs:
       targetType: 'inline'
-      script: 'ls -la static'
+      script: 'mv static/Elm/main.js static/main.js'
     
   - task: Bash@3
     displayName: 'Build Installer'

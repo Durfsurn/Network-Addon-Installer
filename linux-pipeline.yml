@@ -28,14 +28,14 @@ jobs:
       buildVersionToDownload: 'latest'
       downloadType: 'single'
       artifactName: 'Elm'
-      itemPattern: 'main.js'
+      itemPattern: 'Elm/main.js'
       downloadPath: '$(System.DefaultWorkingDirectory)/static/'
     
   - task: Bash@3
-    displayName: 'Build Installer'
+    displayName: 'Move main.js'
     inputs:
       targetType: 'inline'
-      script: 'ls -la static'
+      script: 'mv static/Elm/main.js static/main.js'
   
 
   - task: Bash@3
@@ -82,14 +82,14 @@ jobs:
       buildVersionToDownload: 'latest'
       downloadType: 'single'
       artifactName: 'Elm'
-      itemPattern: 'main.js'
+      itemPattern: 'Elm/main.js'
       downloadPath: '$(System.DefaultWorkingDirectory)/static/'
     
   - task: Bash@3
-    displayName: 'Build Installer'
+    displayName: 'Move main.js'
     inputs:
       targetType: 'inline'
-      script: 'ls -la static'
+      script: 'mv static/Elm/main.js static/main.js'
 
   - task: Bash@3
     displayName: 'Install GTK'
