@@ -1,0 +1,25 @@
+trigger:
+  tags:
+    include:
+      - v*
+    
+pool:
+vmImage: 'ubuntu-latest'
+
+jobs: 
+- job:
+  displayName: 'Build Elm into Javascript'
+  steps:
+  - task: Bash@3
+      displayName: 'Clone submodule'
+      inputs:
+      targetType: 'inline'
+      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+  
+  - task: Bash@3
+      displayName: 'Build Elm'
+      inputs:
+      targetType: 'inline'
+      script: |
+          chmod +x elm_compile.sh
+          ./elm_compile.sh
