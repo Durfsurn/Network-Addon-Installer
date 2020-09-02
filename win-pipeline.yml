@@ -24,3 +24,22 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'ls -la target/release'
+- job:
+  displayName: 'Build NAM Installer for 32bit Windows'
+  steps:
+  - task: Bash@3
+    displayName: 'Set Toolchain'
+    inputs:
+      targetType: 'inline'
+      script: 'rustup default stable-i686-pc-windows-msvc'
+
+  - task: Bash@3
+    displayName: 'Build Installer'
+    inputs:
+      targetType: 'inline'
+      script: 'cargo build --release'
+  - task: Bash@3
+    displayName: 'Build Installer'
+    inputs:
+      targetType: 'inline'
+      script: 'ls -la target/release'
