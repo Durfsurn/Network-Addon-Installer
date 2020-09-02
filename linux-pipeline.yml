@@ -18,12 +18,14 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'rustup default stable-x86_64-unknown-linux-gnu'
-      
+
   - task: Bash@3
     displayName: 'Build Elm'
     inputs:
       targetType: 'inline'
-      script: './elm_compile.sh'
+      script: |
+        chmod +x elm_compile.sh
+        ./elm_compile.sh
 
   - task: Bash@3
     displayName: 'Install GTK'
@@ -64,7 +66,9 @@ jobs:
     displayName: 'Build Elm'
     inputs:
       targetType: 'inline'
-      script: './elm_compile.sh'
+      script: |
+        chmod +x elm_compile.sh
+        ./elm_compile.sh
 
   - task: Bash@3
     displayName: 'Install GTK'
