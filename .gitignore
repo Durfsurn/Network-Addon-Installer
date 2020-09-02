@@ -1,8 +1,8 @@
 /target
 elm/elm-stuff/**
-installation
 test
 Plugins_bak
 Plugins
 *.log
 rcedit.exe
+old_installation
