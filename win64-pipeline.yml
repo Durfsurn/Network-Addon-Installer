@@ -4,19 +4,23 @@ trigger:
 pool:
   vmImage: 'windows-latest'
 
-steps:
-displayName: 'Build NAM Installer for 64bit Windows'
-- task: Bash@3
-  inputs:
+jobs: 
+- job:
+  displayName: 'Build NAM Installer for 64bit Windows'
+  steps:
+  - task: Bash@3
     displayName: 'Set Toolchain'
-    targetType: 'inline'
-    script: 'rustup default stable-x86_64-pc-windows-gnu'
+    inputs:
+      targetType: 'inline'
+      script: 'rustup default stable-x86_64-pc-windows-gnu'
 
-- task: Bash@3
-  inputs:
-    targetType: 'Build Installer'
-    script: 'cargo build --release'
-- task: Bash@3
-  inputs:
-    targetType: 'Build Installer'
-    script: 'ls -la target/release'
+  - task: Bash@3
+    displayName: 'Build Installer'
+    inputs:
+      targetType: 'inline'
+      script: 'cargo build --release'
+  - task: Bash@3
+    displayName: 'Build Installer'
+    inputs:
+      targetType: 'inline'
+      script: 'ls -la target/release'
