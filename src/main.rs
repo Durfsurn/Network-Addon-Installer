@@ -11,7 +11,8 @@ use log4rs::append::file::FileAppender;
 use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
 use std::env;
-use env_logger::Builder;
+use walkdir::WalkDir;
+#[cfg(target_pointer_width = "64")]
 #[derive(RustEmbed)]
 #[folder = "installation/"]
 struct InstallAsset;
@@ -40,7 +41,7 @@ struct Configuration {
     nam_version: String,
     web_server_port: u16,
     #[serde(default)]
-    windows: bool
+    windows: String
 }
 
 fn calculate_folders(strs: &mut Vec<String>) -> Vec<String> {
@@ -63,24 +64,68 @@ static mut PATCHED_EXE: bool = false;
 // List of cleaned files
 static mut CLEANED_FILE_COUNT: usize = 0;
 static mut CLEANED_FILE_MAX: usize = 0;
-static mut CLEANED_FILE_LIST: &'static [&'static str] = &[];
+static mut CLEANED_FILE_LIST: Vec<String> = Vec::new();
 // List of installed files
 static mut INSTALLED_FILE_COUNT: usize = 0;
 static mut INSTALLED_FILE_MAX: usize = 0;
-static mut INSTALLED_FILE_LIST: &'static [&'static str] = &[];
+static mut INSTALLED_FILE_LIST: Vec<String> = Vec::new();
+
+#[derive(Clone)]
+struct InstallAssetList {
+    list: Vec<String>
+}
+impl InstallAssetList {
+    #[cfg(target_pointer_width = "64")]
+    fn get_file(&self, f: &str) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
+        InstallAsset::get(f)
+    }
+    #[cfg(target_pointer_width = "32")]
+    fn get_file(&self, f: &str) -> () {
+        std::fs::read(f)
+    }
+
+    fn to_vec(self) -> Vec<String> {
+        self.list
+    }
+
+    fn filter_images(self) -> Self {
+        InstallAssetList {
+            list: self.list
+                .iter()
+                .filter(|f| f.contains(".jpg") || f.contains(".png"))
+                .map(|f| f.to_owned())
+                .collect()
+        }
+    }
+    fn filter_docs(self) -> Self {
+        InstallAssetList {
+            list: self.list
+                .iter()
+                .filter(|f| f.contains(".txt"))
+                .map(|f| f.to_owned())
+                .collect()
+        }
+    }
+}
+// #[cfg(target_pointer_width = "64")]
+// fn get_install_asset_list() -> InstallAssetList {
+//     InstallAssetList {
+//         list:  InstallAsset::iter().map(|asset| asset.to_string()).collect()
+//     }
+// }
+
+
+// #[cfg(target_pointer_width = "32")]
+fn get_install_asset_list() -> InstallAssetList {
+    InstallAssetList {
+        list: WalkDir::new("installation/").into_iter().map(|f| f.unwrap().path().to_string_lossy().to_string()).collect()
+    }
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {   
     let mut config: Configuration = serde_json::from_str(CONFIG)?;
-    // env_logger::init();
-
-    // if cfg!(debug_assertions) {
-    //     Builder::new()
-    //         .parse_filters("RUST_LOG=info") // lock in info level logging for the file on debug compile but not for release.
-    //         .init()
-    //     ;
-    // };   
-
+   
     let logfile = FileAppender::builder()
         .encoder(Box::new(PatternEncoder::new("{l} - {m}\n")))
         .build(format!("NAM Installer v{}.log", &config.nam_version))?
@@ -95,14 +140,20 @@ async fn main() -> anyhow::Result<()> {
     ;
 
     log4rs::init_config(b_config)?; 
-
-    let windows = os_info::get().os_type().to_string().to_lowercase() == "windows";
-
+    let os_name = os_info::get().os_type().to_string().to_lowercase();
+    let os_bit = os_info::get().bitness().to_string();
+    let windows = if os_info::get().os_type().to_string().to_lowercase() == "windows" {
+        format!("{} {}", os_name, os_bit)
+    }
+    else {
+        os_name
+    };
+    
     config.windows = windows;
 
-    let asset_iter = InstallAsset::iter();
+    let asset_iter = get_install_asset_list(); 
 
-    let file_list: Vec<String> = calculate_folders(asset_iter.map(|asset| asset.to_string()).collect::<Vec<String>>().as_mut());
+    let file_list: Vec<String> = calculate_folders(&mut asset_iter.clone().to_vec());
     
     let uuid = uuid::Uuid::new_v4().to_hyphenated();
 
@@ -116,16 +167,10 @@ async fn main() -> anyhow::Result<()> {
     ;
     let arc_folder_structure = std::sync::Arc::new(folder_structure.clone());
         
-    let arc_docs_list: std::sync::Arc<Vec<String>> = std::sync::Arc::new(InstallAsset::iter()
-        .map(|f| f.to_string())
-        .filter(|f| f.contains(".txt"))
-        .collect()
-    );
-    let arc_images_list: std::sync::Arc<Vec<String>> = std::sync::Arc::new(InstallAsset::iter()
-        .map(|f| f.to_string())
-        .filter(|f| f.contains(".jpg") || f.contains(".png"))
-        .collect()
-    );
+    let arc_asset_list: std::sync::Arc<InstallAssetList> = std::sync::Arc::new(asset_iter.clone());        
+
+    let arc_docs_list: std::sync::Arc<InstallAssetList> = std::sync::Arc::new(asset_iter.clone().filter_docs());
+    let arc_images_list: std::sync::Arc<InstallAssetList> = std::sync::Arc::new(asset_iter.clone().filter_images());
     
     std::fs::remove_dir_all(format!("{}", uuid))?;
 
@@ -209,7 +254,7 @@ async fn main() -> anyhow::Result<()> {
         .and(warp::path!("install_list"))
         .and(warp::body::json())
         .map(move |json: InstallConfig| {
-            (json.clone(), arc_folder_structure.clone())
+            (json.clone(), arc_folder_structure.clone(), arc_asset_list.clone())
         })
         .and_then(install_nam)
         .boxed()
@@ -353,7 +398,16 @@ struct InstallConfig {
     files_to_install: Vec<String>,
     location: String 
 }
-async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<Vec<InstallerOption>>)) -> Result<impl warp::Reply> {
+async fn install_nam((install_config, options, asset_iter): (InstallConfig, std::sync::Arc<Vec<InstallerOption>>, std::sync::Arc<InstallAssetList>)) -> Result<impl warp::Reply> {
+    unsafe {        
+        CLEANED_FILE_COUNT = 0;
+        CLEANED_FILE_MAX = 0;
+        CLEANED_FILE_LIST = Vec::new();
+        INSTALLED_FILE_COUNT = 0;
+        INSTALLED_FILE_MAX = 0;
+        INSTALLED_FILE_LIST = Vec::new();
+    };
+
     if !&install_config.location.ends_with("Plugins") {
         Err(Error::Custom("Install Location must end in a folder called `Plugins`".to_string()).into())
     }
@@ -369,6 +423,14 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
             let max_clean = files_to_move.len();
 
             for (count, file) in plugins_dir.into_iter().enumerate() {
+                unsafe {
+                    CLEANED_FILE_COUNT = count;
+                    CLEANED_FILE_MAX = max_clean;
+                    let mut nl = CLEANED_FILE_LIST.clone();
+                    let f_n = file.as_ref().unwrap().file_name().to_string_lossy().to_string();
+                    nl.push(f_n);
+                    CLEANED_FILE_LIST = nl;
+                };
                 match &file {
                     Ok(f) => {                            
                         let f_n = f.file_name().to_string_lossy().to_string();
@@ -396,20 +458,8 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
                         continue
                     }
                 }
-                unsafe {
-                    let count = count + 1;
-                    CLEANED_FILE_COUNT = count;
-                    CLEANED_FILE_MAX = max_clean;
-                    CLEANED_FILE_LIST.to_vec()
-                        .push(file.unwrap()
-                            .file_name()
-                            .to_string_lossy()
-                            .to_string()
-                            .as_str()
-                    );
-                };
             };
-            panic!();
+            
             // Retrieve the files from the binary
             let mut chosen_options: Vec<InstallerOption> = Vec::new();
             for file in install_config.files_to_install {
@@ -427,7 +477,7 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
                 .collect::<Vec<String>>()
             ;
 
-            let file_list: Vec<String> = InstallAsset::iter().map(|asset| asset.to_string()).filter(|f| f.contains(".dat")).collect();
+            let file_list: Vec<String> = asset_iter.list.iter().filter(|f| f.contains(".dat")).map(|f| f.to_owned()).collect();
 
             let max_install = files_to_install.len();
             for (count, file_name) in files_to_install.iter().enumerate() {
@@ -437,7 +487,7 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
                 let filtered_file_list: Vec<&String> = file_list.iter().filter(|f| f.contains(&file_name)).collect();
                 
                 for file in filtered_file_list {
-                    let file_data = InstallAsset::get(file);
+                    let file_data = asset_iter.list.iter().find(|f| f == &file);
                     match file_data {
                         Some(f) => {
                             info!("Retrieved file: {}", file);
@@ -474,7 +524,9 @@ async fn install_nam((install_config, options): (InstallConfig, std::sync::Arc<V
                     let count = count + 1;
                     INSTALLED_FILE_COUNT = count;
                     INSTALLED_FILE_MAX = max_install;
-                    INSTALLED_FILE_LIST.to_vec().push(file_name.as_str());
+                    let mut nl = INSTALLED_FILE_LIST.clone();
+                    nl.push(prettify_folder_name(file_name));
+                    INSTALLED_FILE_LIST = nl;
                 };
             };
         });
@@ -578,14 +630,14 @@ async fn load_install_status() -> Result<impl warp::Reply> {
             , "cleaning_max" : CLEANED_FILE_MAX
             , "installed_count" : INSTALLED_FILE_COUNT
             , "installed_max" : INSTALLED_FILE_MAX
-            , "files_cleaned" : []
-            , "files_copied" : []
+            , "files_cleaned" : CLEANED_FILE_LIST
+            , "files_copied" : INSTALLED_FILE_LIST
             }
         ).to_string())
     }
 }
 
-async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<Vec<String>>)) -> Result<impl warp::Reply> {
+async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<InstallAssetList>)) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
     let name = if name.starts_with("/") {
         name[1..].to_string()
@@ -595,13 +647,14 @@ async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<Vec<S
     };
     let name = format!("{}.txt", name).replace("installation/", "");  
 
-    let f = match InstallAsset::get(&name) {
+    let f = match asset_list.get_file(&name)  {
         Some(file) => String::from_utf8_lossy(file.as_ref()).to_string(),
         None => {
             let unknown_file = name.replace(".txt", "");
             println!("{:#?}", unknown_file);
             
-            let possible_files = asset_list.iter()
+            let possible_files = asset_list.list
+                .iter()
                 .map(|f| f.to_owned())
                 .filter(|f| f.contains(&unknown_file))
                 .collect::<Vec<String>>()
@@ -611,7 +664,7 @@ async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<Vec<S
                "".to_string()
             }
             else {
-                match InstallAsset::get(possible_files[0].as_str()) {
+                match  asset_list.get_file(&possible_files[0].as_str()) {
                     Some(txt) => String::from_utf8_lossy(txt.as_ref()).to_string(),
                     None => {
                         warn!("Unable to retrieve files in folder: {}", &unknown_file);
@@ -624,7 +677,7 @@ async fn load_local_file((file_name, asset_list) : (String, std::sync::Arc<Vec<S
 
     Ok(f)
 }
-async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<Vec<String>>)) -> Result<impl warp::Reply> {
+async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<InstallAssetList>)) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name).decode_utf8_lossy().to_string();
     let name = if name.starts_with("/") {
         name[1..].to_string()
@@ -634,11 +687,12 @@ async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<Vec<
     };
     let name = format!("{}.png", name).replace("installation/", "");  
 
-    let f = match InstallAsset::get(&name) {
+    let f = match asset_list.get_file(&name) {
         Some(file) => Ok(file),
         None => {
             let unknown_file = name.replace(".png", "");
-            let possible_files = asset_list.iter()
+            let possible_files = asset_list.list
+                .iter()
                 .map(|f| f.to_owned())
                 .filter(|f| f.contains(&unknown_file))
                 .collect::<Vec<String>>()
@@ -648,7 +702,7 @@ async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<Vec<
             }
             else {
                 let full_docs = possible_files.join("\n");
-                match InstallAsset::get(full_docs.as_str()) {
+                match asset_list.get_file(full_docs.as_str()) {
                     Some(img) => Ok(img),
                     None => Err(Error::Custom(format!("Unable to retrieve any images in folder: {}", &unknown_file)))
                 }
@@ -656,7 +710,7 @@ async fn load_local_image((file_name, asset_list) : (String, std::sync::Arc<Vec<
         }
     }?;
 
-    let bytes_f: Vec<u8> = f.into();
+    let bytes_f: Vec<u8> = (f.clone()).into();
     Ok(bytes_f)
 }
 

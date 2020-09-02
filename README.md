@@ -17,13 +17,16 @@ Images are the same, and must be in `.png` format:
 - e.g. for feature `z_NAM Controller_LHD`, create a file called `z_NAM Controller_LHD.png`
 
 ## Compilation
-
+Create a folder in the location you cloned this repo into called `installation`, and in it paste your NAM files extracted from the .jar.
 Assuming you have Rust installed, run `cargo build --release` from the root folder. Your output binary will be found in `target/release/` called `network-addon-installer`.
 
 ## TODO
 - [x] Fix strange radio button issues (deselecting children, strange behaviour interacting with other radio buttons)
 - [x] Send selection back to Rust and prompt install
-- [ ] Test on Windows, Linux, Mac
+- [x] Add functionality to seek out files that have the same name as one to install in the `plugins` folder (regardless of folder location), and move it to `plugins_bak`.
+- [ ] Test on Windows,
+- [ ] Linux, 
+- [ ] Mac
 - [ ] Potentially recode a Controller Compiler? (stretch goal)
 
 Many thanks to NT core for the freeware 4GB Patch!

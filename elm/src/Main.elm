@@ -1,8 +1,8 @@
 module Main exposing (main)
 
 import Browser exposing (document)
-import Html exposing (Html, br, button, div, h3, img, input, label, p, section, td, text, tr)
-import Html.Attributes exposing (checked, class, disabled, name, src, style, type_, value)
+import Html exposing (Html, a, br, button, div, h3, img, input, label, p, progress, section, td, text, tr)
+import Html.Attributes exposing (checked, class, disabled, href, name, src, style, type_, value)
 import Html.Events exposing (on, onClick, onInput)
 import Http
 import Json.Decode as Decode exposing (Decoder)
@@ -37,11 +37,13 @@ main =
 
 type State
     = Default
+    | Bit32Accept
     | TCAccept
     | CheckedExe
     | PatchedExe
     | SelectedOptions
     | ViewInstallItems
+    | Installing
 
 
 type alias Flags =
@@ -106,6 +108,7 @@ type Msg
     | ResetSelectList
       -- State Changes
     | AcceptTC
+    | AcceptBit
     | PatchExe
     | ChooseInstallOption
     | Install
@@ -277,7 +280,24 @@ update message model =
             ( { model
                 | tc = True
                 , state =
-                    if model.flags.windows == "true" then
+                    if String.contains "windows" model.flags.windows then
+                        if String.contains "32" model.flags.windows then
+                            Bit32Accept
+
+                        else
+                            TCAccept
+
+                    else
+                        PatchedExe
+              }
+            , Cmd.none
+            )
+
+        AcceptBit ->
+            ( { model
+                | tc = True
+                , state =
+                    if String.contains "windows" model.flags.windows then
                         TCAccept
 
                     else
@@ -459,18 +479,15 @@ update message model =
         InstallProgress progress ->
             case progress of
                 RemoteData.Success pr ->
-                    let
-                        _ =
-                            Debug.log "" pr
-                    in
-                    ( { model | progress = Just pr }
-                    , --  if pr.installed_count == pr.installed_max then
-                      --     Cmd.none
-                      --   else
-                      delay
-                        1000
-                        ProgressTick
-                    )
+                    if (pr.installed_count /= 0) && (pr.installed_count == pr.installed_max) then
+                        ( { model | progress = Just pr, state = Installing }, Cmd.none )
+
+                    else
+                        ( { model | progress = Just pr, state = Installing }
+                        , delay
+                            250
+                            ProgressTick
+                        )
 
                 _ ->
                     ( model, Cmd.none )
@@ -862,7 +879,20 @@ displayInstaller model =
                  ]
                 )
             ]
-        , if model.state == ViewInstallItems then
+        , if model.state == Bit32Accept then
+            div [ class "modal is-active" ]
+                [ div [ class "modal-background" ]
+                    []
+                , div [ class "modal-card" ]
+                    [ section [ class "modal-card-body" ]
+                        [ div [] [ text "It is not recommended to install the NAM on 32-bit systems. Instability and crash to desktops may be common. This is a limitation of your operating system. It is highly recommended you upgrade to a 64-bit system." ]
+                        , a [ href "" ] [ text "READ THIS FOR MORE" ]
+                        , button [ class "button is-warning", onClick AcceptBit ] [ text "I agree" ]
+                        ]
+                    ]
+                ]
+
+          else if model.state == ViewInstallItems then
             div [ class "modal is-active" ]
                 [ div [ class "modal-background" ]
                     []
@@ -905,6 +935,53 @@ displayInstaller model =
                         ]
                     ]
                 ]
+
+          else if model.state == Installing then
+            case model.progress of
+                Just pr ->
+                    div [ class "modal is-active" ]
+                        [ div [ class "modal-background" ]
+                            []
+                        , div [ class "modal-card", style "min-width" "75%" ]
+                            [ section [ class "modal-card-body" ]
+                                [ div
+                                    [ style "height" "80vh"
+                                    , style "overflow-y" "scroll"
+                                    ]
+                                  <|
+                                    (List.map displayOptionNames <| LExtra.unique <| List.sort pr.files_copied)
+                                , br [] []
+                                , p [] [ text <| "Copied: " ++ String.fromFloat pr.installed_count ]
+                                , p [] [ text <| "Total: " ++ String.fromFloat pr.installed_max ]
+                                , br [] []
+                                , let
+                                    cl =
+                                        if pr.installed_count == pr.installed_max then
+                                            "is-success"
+
+                                        else
+                                            "is-info"
+                                  in
+                                  progress
+                                    [ class "progress"
+                                    , class cl
+                                    , value (String.fromFloat pr.installed_count)
+                                    , Html.Attributes.max (String.fromFloat pr.installed_max)
+                                    ]
+                                    [ text <| String.fromFloat pr.installed_count ++ "%" ]
+                                ]
+                            ]
+                        ]
+
+                Nothing ->
+                    div [ class "modal is-active" ]
+                        [ div [ class "modal-background" ]
+                            []
+                        , div [ class "modal-card", style "min-width" "75%" ]
+                            [ section [ class "modal-card-body" ]
+                                [ text "Error" ]
+                            ]
+                        ]
 
           else if model.modal then
             div [ class "modal is-active" ]
