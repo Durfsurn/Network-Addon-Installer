@@ -21,10 +21,10 @@ jobs:
       script: 'rustup default stable-x86_64-apple-darwin'
 
   - task: Bash@3
-  displayName: 'Build Elm'
-  inputs:
-    targetType: 'inline'
-    script: './elm_compile.sh'
+    displayName: 'Build Elm'
+    inputs:
+      targetType: 'inline'
+      script: './elm_compile.sh'
     
   - task: Bash@3
     displayName: 'Build Installer'
