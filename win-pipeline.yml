@@ -36,7 +36,7 @@ jobs:
     displayName: 'Set Toolchain'
     inputs:
       targetType: 'inline'
-      script: 'rustup default stable-x86_64-pc-windows-gnu'
+      script: 'rustup default stable-x86_64-pc-windows-msvc'
 
   - task: Bash@3
     displayName: 'Build Installer'
