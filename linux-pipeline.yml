@@ -20,10 +20,10 @@ jobs:
       script: 'rustup default stable-x86_64-unknown-linux-gnu'
       
   - task: Bash@3
-  displayName: 'Build Elm'
-  inputs:
-    targetType: 'inline'
-    script: './elm_compile.sh'
+    displayName: 'Build Elm'
+    inputs:
+      targetType: 'inline'
+      script: './elm_compile.sh'
 
   - task: Bash@3
     displayName: 'Install GTK'
@@ -59,6 +59,12 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'rustup default stable-i686-unknown-linux-gnu'
+
+  - task: Bash@3
+    displayName: 'Build Elm'
+    inputs:
+      targetType: 'inline'
+      script: './elm_compile.sh'
 
   - task: Bash@3
     displayName: 'Install GTK'

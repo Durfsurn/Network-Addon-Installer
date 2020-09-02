@@ -15,10 +15,10 @@ jobs:
       script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
       
   - task: Bash@3
-  displayName: 'Build Elm'
-  inputs:
-    targetType: 'inline'
-    script: './elm_compile.sh'
+    displayName: 'Build Elm'
+    inputs:
+      targetType: 'inline'
+      script: './elm_compile.sh'
 
   - task: Bash@3
     displayName: 'Set Toolchain'
@@ -53,6 +53,12 @@ jobs:
       targetType: 'inline'
       script: 'rustup default stable-i686-pc-windows-msvc'
 
+  - task: Bash@3
+    displayName: 'Build Elm'
+    inputs:
+      targetType: 'inline'
+      script: './elm_compile.sh'
+      
   - task: Bash@3
     displayName: 'Build Installer'
     inputs:
