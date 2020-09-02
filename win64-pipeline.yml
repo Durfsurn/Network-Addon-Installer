@@ -1,0 +1,23 @@
+trigger:
+- master
+
+pool:
+  vmImage: 'windows-latest'
+
+steps:
+- script: echo Hello, world!
+  displayName: 'Build NAM Installer for 64bit Windows'
+- task: Bash@3
+  inputs:
+    displayName: 'Set Toolchain'
+    targetType: 'inline'
+    script: 'rustup default stable-x86_64-pc-windows-gnu'
+
+- task: Bash@3
+  inputs:
+    targetType: 'Build Installer'
+    script: 'cargo build --release'
+- task: Bash@3
+  inputs:
+    targetType: 'Build Installer'
+    script: 'ls -la target/release'
