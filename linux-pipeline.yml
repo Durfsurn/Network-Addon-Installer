@@ -58,55 +58,55 @@ jobs:
       targetType: 'inline'
       script: 'ls -la target/release'
       
-- job:
-  displayName: 'Build NAM Installer for 32bit Linux'
-  steps:
-  - task: Bash@3
-    displayName: 'Clone submodule'
-    inputs:
-      targetType: 'inline'
-      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+# - job:
+#   displayName: 'Build NAM Installer for 32bit Linux'
+#   steps:
+#   - task: Bash@3
+#     displayName: 'Clone submodule'
+#     inputs:
+#       targetType: 'inline'
+#       script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
 
-  - task: Bash@3
-    displayName: 'Set Toolchain'
-    inputs:
-      targetType: 'inline'
-      script: 'rustup default stable-i686-unknown-linux-gnu'
+#   - task: Bash@3
+#     displayName: 'Set Toolchain'
+#     inputs:
+#       targetType: 'inline'
+#       script: 'rustup default stable-i686-unknown-linux-gnu'
 
-  - task: DownloadBuildArtifacts@0
-    displayName: 'Download main.js'
-    inputs:
-      buildType: 'specific'
-      project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
-      pipeline: '7'
-      buildVersionToDownload: 'latest'
-      downloadType: 'single'
-      artifactName: 'Elm'
-      itemPattern: 'Elm/main.js'
-      downloadPath: '$(System.DefaultWorkingDirectory)/static/'
+#   - task: DownloadBuildArtifacts@0
+#     displayName: 'Download main.js'
+#     inputs:
+#       buildType: 'specific'
+#       project: 'eabaa3ca-a386-4633-b183-c4f2ac1c2667'
+#       pipeline: '7'
+#       buildVersionToDownload: 'latest'
+#       downloadType: 'single'
+#       artifactName: 'Elm'
+#       itemPattern: 'Elm/main.js'
+#       downloadPath: '$(System.DefaultWorkingDirectory)/static/'
     
-  - task: Bash@3
-    displayName: 'Move main.js'
-    inputs:
-      targetType: 'inline'
-      script: 'mv static/Elm/main.js static/main.js'
+#   - task: Bash@3
+#     displayName: 'Move main.js'
+#     inputs:
+#       targetType: 'inline'
+#       script: 'mv static/Elm/main.js static/main.js'
 
-  - task: Bash@3
-    displayName: 'Install GTK'
-    inputs:
-      targetType: 'inline'
-      script: |
-        sudo apt-get install libgtk-3-dev
-        sudo apt install gcc-multilib
+#   - task: Bash@3
+#     displayName: 'Install GTK'
+#     inputs:
+#       targetType: 'inline'
+#       script: |
+#         sudo apt-get install libgtk-3-dev
+#         sudo apt install gcc-multilib
 
-  - task: Bash@3
-    displayName: 'Build Installer'
-    inputs:
-      targetType: 'inline'
-      script: 'cargo build --release'
+#   - task: Bash@3
+#     displayName: 'Build Installer'
+#     inputs:
+#       targetType: 'inline'
+#       script: 'cargo build --release'
 
-  - task: Bash@3
-    displayName: 'View Installer Folder'
-    inputs:
-      targetType: 'inline'
-      script: 'ls -la target/release'
+#   - task: Bash@3
+#     displayName: 'View Installer Folder'
+#     inputs:
+#       targetType: 'inline'
+#       script: 'ls -la target/release'

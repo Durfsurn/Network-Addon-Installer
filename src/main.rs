@@ -3,7 +3,10 @@ use warp::{Filter, http::Response};
 use log::{info, warn, debug, error};
 use anyhow::anyhow;
 use percent_encoding;
+
+#[cfg(target_pointer_width = "64")]
 use rust_embed::RustEmbed;
+
 use std::path::Path;
 use os_info;
 use log::LevelFilter;
@@ -12,6 +15,7 @@ use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Config, Root};
 use std::env;
 use walkdir::WalkDir;
+
 #[cfg(target_pointer_width = "64")]
 #[derive(RustEmbed)]
 #[folder = "installation/"]
@@ -80,8 +84,8 @@ impl InstallAssetList {
         InstallAsset::get(f)
     }
     #[cfg(target_pointer_width = "32")]
-    fn get_file(&self, f: &str) -> () {
-        std::fs::read(f)
+    fn get_file(&self, f: &str) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
+        Some(std::fs::read(f).unwrap().into())
     }
 
     fn to_vec(self) -> Vec<String> {
