@@ -21,7 +21,6 @@
             "krisajenkins/remotedata": "6.0.1",
             "rtfeldman/elm-iso8601-date-strings": "1.1.3",
             "elm/virtual-dom": "1.0.2",
-            "abinayasudhir/elm-treeview" :"1.0.1",
             "elm-community/list-extra" : "8.2.4"
         },
         "indirect": {

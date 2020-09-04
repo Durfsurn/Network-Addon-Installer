@@ -50,6 +50,12 @@ jobs:
       targetType: 'inline'
       script: 'ls -la target/release'
 
+  - task: Bash@3
+    displayName: 'Embed .ico'
+    inputs:
+      targetType: 'inline'
+      script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+      
 - job:
   displayName: 'Build NAM Installer for 32bit Windows'
   steps:
@@ -94,3 +100,9 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'ls -la target/release'
+
+  - task: Bash@3
+    displayName: 'Embed .ico'
+    inputs:
+      targetType: 'inline'
+      script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
