@@ -54,7 +54,7 @@ jobs:
     displayName: 'Embed .ico'
     inputs:
       targetType: 'inline'
-      script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+      script: '$(System.DefaultWorkingDirectory)/rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
 
   - task: Bash@3
     displayName: 'Rename executable'
@@ -124,7 +124,7 @@ jobs:
     displayName: 'Embed .ico'
     inputs:
       targetType: 'inline'
-      script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+      script: '$(System.DefaultWorkingDirectory)/rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
 
   - task: Bash@3
     displayName: 'Rename executable'
@@ -137,6 +137,13 @@ jobs:
     inputs:
       SourceFolder: '$(System.DefaultWorkingDirectory)/target/release'
       Contents: 'network-addon-installer-win32.exe'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  - task: CopyFiles@2
+    displayName: 'Copy files to staging directory'
+    inputs:
+      SourceFolder: '$(System.DefaultWorkingDirectory)/installation'
+      Contents: '**'
       TargetFolder: '$(Build.ArtifactStagingDirectory)'
 
   - task: PublishBuildArtifacts@1
