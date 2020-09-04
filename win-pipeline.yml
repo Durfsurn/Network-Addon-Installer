@@ -55,7 +55,26 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
-      
+
+  - task: Bash@3
+    displayName: 'Rename executable'
+    inputs:
+      targetType: 'inline'
+      script: 'mv "target/release/network-addon-installer.exe" "target/release/network-addon-installer-win64.exe"'
+  
+  - task: CopyFiles@2
+    displayName: 'Copy executable to staging directory'
+    inputs:
+      SourceFolder: '$(System.DefaultWorkingDirectory)/target/release'
+      Contents: 'network-addon-installer-win64.exe'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'Windows'
+      publishLocation: 'Container'
+
 - job:
   displayName: 'Build NAM Installer for 32bit Windows'
   steps:
@@ -106,3 +125,22 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+
+  - task: Bash@3
+    displayName: 'Rename executable'
+    inputs:
+      targetType: 'inline'
+      script: 'mv "target/release/network-addon-installer.exe" "target/release/network-addon-installer-win32.exe"'
+  
+  - task: CopyFiles@2
+    displayName: 'Copy executable to staging directory'
+    inputs:
+      SourceFolder: '$(System.DefaultWorkingDirectory)/target/release'
+      Contents: 'network-addon-installer-win32.exe'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'Windows'
+      publishLocation: 'Container'

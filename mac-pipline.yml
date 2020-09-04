@@ -49,3 +49,22 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'ls -la target/release'
+  
+  - task: Bash@3
+    displayName: 'Rename executable'
+    inputs:
+      targetType: 'inline'
+      script: 'mv "target/release/network-addon-installer.exe" "target/release/network-addon-installer-mac64"'
+  
+  - task: CopyFiles@2
+    displayName: 'Copy executable to staging directory'
+    inputs:
+      SourceFolder: '$(System.DefaultWorkingDirectory)/target/release'
+      Contents: 'network-addon-installer-mac64'
+      TargetFolder: '$(Build.ArtifactStagingDirectory)'
+
+  - task: PublishBuildArtifacts@1
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'MacOS'
+      publishLocation: 'Container'
