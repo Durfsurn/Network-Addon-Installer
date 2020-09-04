@@ -51,6 +51,12 @@ jobs:
       script: 'ls -la target/release'
 
   - task: Bash@3
+    displayName: 'Test'
+    inputs:
+      targetType: 'inline'
+      script: 'ls -la'
+      
+  - task: Bash@3
     displayName: 'Embed .ico'
     inputs:
       targetType: 'inline'
@@ -131,6 +137,12 @@ jobs:
     inputs:
       targetType: 'inline'
       script: 'mv "target/release/network-addon-installer.exe" "target/release/network-addon-installer-win32.exe"'
+  
+  - task: Bash@3
+    displayName: 'Test'
+    inputs:
+      targetType: 'inline'
+      script: 'ls -la'
   
   - task: CopyFiles@2
     displayName: 'Copy executable to staging directory'
