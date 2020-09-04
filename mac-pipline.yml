@@ -54,7 +54,7 @@ jobs:
     displayName: 'Rename executable'
     inputs:
       targetType: 'inline'
-      script: 'mv "target/release/network-addon-installer.exe" "target/release/network-addon-installer-mac64"'
+      script: 'mv "target/release/network-addon-installer" "target/release/network-addon-installer-mac64"'
   
   - task: CopyFiles@2
     displayName: 'Copy executable to staging directory'
