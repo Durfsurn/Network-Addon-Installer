@@ -16,6 +16,12 @@ jobs:
       targetType: 'inline'
       script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
       
+  - task: Cache@2
+    displayName: Cache target 
+    inputs:
+      key: 'win64-target | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
+      path: $(System.DefaultWorkingDirectory)/target
+      
   - task: DownloadBuildArtifacts@0
     displayName: 'Download main.js'
     inputs:
@@ -86,6 +92,12 @@ jobs:
 - job:
   displayName: 'Build NAM Installer for 32bit Windows'
   steps:
+  - task: Cache@2
+    displayName: Cache target 
+    inputs:
+      key: 'win32target | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
+      path: $(System.DefaultWorkingDirectory)/target
+
   - task: Bash@3
     displayName: 'Clone submodule'
     env: 
@@ -102,6 +114,8 @@ jobs:
         ls -la installation
         rm -rf installation/$2=z_NAM Controller_RHD_4GB_Full
         rm -rf installation/$3+z_NAM Controller_LHD_4GB_Full
+        rm -rf installation/2 Additional Network Features\RealHighway
+        ls -la installation
 
   - task: Bash@3
     displayName: 'Set Toolchain'

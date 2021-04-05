@@ -8,6 +8,11 @@ jobs:
 - job:
   displayName: 'Build NAM Installer for 64bit Mac'
   steps:
+  - task: Cache@2
+    displayName: Cache target 
+    inputs:
+      key: 'macostarget | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
+      path: $(System.DefaultWorkingDirectory)/target
   - task: Bash@3
     displayName: 'Clone submodule'
     env: 
