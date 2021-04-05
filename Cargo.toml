@@ -25,5 +25,6 @@ uuid = { version = "0.8", features = ["serde", "v4"] }
 walkdir = "2"
 warp = "0.2"
 webbrowser = "0.5"
+term = "0.7"
 
 rust-embed = { version = "5", features = ["compression"] }

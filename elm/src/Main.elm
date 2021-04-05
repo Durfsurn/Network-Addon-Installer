@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Browser exposing (document)
+import Browser
 import Html exposing (Html, a, br, button, div, h3, img, input, label, p, progress, section, td, text, tr)
 import Html.Attributes exposing (checked, class, disabled, href, name, src, style, type_, value)
 import Html.Events exposing (on, onClick, onInput)
@@ -11,6 +11,7 @@ import Json.Encode as Encode
 import List
 import List.Extra as LExtra
 import Process
+import ReCase
 import RemoteData exposing (WebData)
 import Task
 
@@ -376,7 +377,7 @@ update message model =
                         ( { model | state = PatchedExe, loading = False }, Cmd.none )
 
                     else
-                        ( { model | modal = True, loading = False, modal_text = "Check your path of SimCity 4, the executable could not be found and/or the 4gb+patch failed." }, Cmd.none )
+                        ( { model | modal = True, loading = False, modal_text = "Check your path of SimCity 4, the executable could not be found and/or the 4GB patch failed. Please check that your user has permissions to write and remove files in the folder you are running this installer from." }, Cmd.none )
 
                 _ ->
                     ( model, Cmd.none )
@@ -694,7 +695,7 @@ view model =
         version =
             model.flags.rust_version
     in
-    { title = "Network Addon Mod Installer v" ++ version
+    { title = "Network Addon Mod Installer v" ++ version ++ " (" ++ ReCase.recase ReCase.ToTitle model.flags.windows ++ ")"
     , body =
         [ innerHTML ]
     }
@@ -704,7 +705,7 @@ displayInstaller : Model -> Html Msg
 displayInstaller model =
     let
         height_ =
-            if model.flags.windows == "true" then
+            if String.contains "windows" model.flags.windows then
                 "62vh"
 
             else
@@ -712,9 +713,9 @@ displayInstaller model =
     in
     div [ class "application-area" ]
         [ div [ style "padding" "15px" ]
-            [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ]
+            [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ ReCase.recase ReCase.ToTitle model.flags.rust_version ++ " (" ++ model.flags.windows ++ ")" ]
             , br [] []
-            , if model.flags.windows == "true" then
+            , if String.contains "windows" model.flags.windows then
                 div []
                     [ div [ class "columns" ]
                         [ div [ class "column is-narrow" ]
@@ -1001,7 +1002,7 @@ displayInstaller model =
                     []
                 , div [ class "modal-card" ]
                     [ section [ class "modal-card-body" ]
-                        [ div [] tcText
+                        [ div [] (tcText model.flags.nam_version)
                         , button [ class "button is-success", onClick AcceptTC ] [ text "I agree" ]
                         ]
                     ]
@@ -1030,7 +1031,11 @@ displayOptions model option =
                     List.range 0 option.depth
 
         name_ =
-            option.name
+            if option.name == "installation" then
+                "NAM v" ++ model.flags.nam_version
+
+            else
+                option.name
     in
     [ div
         [ style "display" <|
@@ -1114,7 +1119,7 @@ displayOptions model option =
                             "invisible"
                         )
                     ]
-                    [ text <| name_ ]
+                    [ text name_ ]
                 ]
             ]
         , br [] []
@@ -1256,9 +1261,9 @@ unwrapInstallerOption option =
             l
 
 
-tcText : List (Html Msg)
-tcText =
-    [ p [] [ text "Welcome to the Network Addon Mod 37 installer application! Please read the following carefully, then select 'I agree with these conditions' to continue." ]
+tcText : String -> List (Html Msg)
+tcText ver =
+    [ p [] [ text <| "Welcome to the Network Addon Mod " ++ ver ++ " installer application! Please read the following carefully, then select 'I agree with these conditions' to continue." ]
     , p [] [ text "---------------------------------------------------------------------------------------------" ]
     , p [] [ text "Users download, install, and run this software completely and solely at their own risk. Maxis, Electronic Arts,the creators, and its individual contributors are not responsible for any errors, crashes, problems, or any other issue that you may have if you have downloaded and applied this software to your game. Players should also expect that any future patches and/or expansion packs and SimCityscape may not function properly with the game if you have downloaded this  software and applied it to your game. The use of this software, the information\n within, and the Network Addon Mod is conditional upon the acceptance of this disclaimer and all that is within this software." ]
     , p [] [ text "---------------------------------------------------------------------------------------------" ]

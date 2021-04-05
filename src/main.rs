@@ -12,8 +12,8 @@ use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use os_info;
-use std::env;
 use std::path::Path;
+use std::{env, str::FromStr};
 use walkdir::WalkDir;
 
 #[cfg(target_pointer_width = "64")]
@@ -79,7 +79,7 @@ static mut INSTALLED_FILE_COUNT: usize = 0;
 static mut INSTALLED_FILE_MAX: usize = 0;
 static mut INSTALLED_FILE_LIST: Vec<String> = Vec::new();
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 struct InstallAssetList {
     list: Vec<String>,
 }
@@ -118,14 +118,7 @@ impl InstallAssetList {
         }
     }
 }
-// #[cfg(target_pointer_width = "64")]
-// fn get_install_asset_list() -> InstallAssetList {
-//     InstallAssetList {
-//         list:  InstallAsset::iter().map(|asset| asset.to_string()).collect()
-//     }
-// }
-
-// #[cfg(target_pointer_width = "32")]
+#[cfg(target_pointer_width = "64")]
 fn get_install_asset_list() -> InstallAssetList {
     InstallAssetList {
         list: WalkDir::new("installation/")
@@ -135,8 +128,29 @@ fn get_install_asset_list() -> InstallAssetList {
     }
 }
 
+#[cfg(target_pointer_width = "32")]
+fn get_install_asset_list() -> InstallAssetList {
+    InstallAssetList {
+        list: WalkDir::new("installation/")
+            .into_iter()
+            .map(|f| f.unwrap().path().to_string_lossy().to_string())
+            .filter(|f| !f.contains("4GB_FULL"))
+            .collect(),
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let mut term = term::stdout().unwrap();
+    term.fg(term::color::RED).unwrap();
+    println!("DO NOT CLOSE THIS WINDOW!");
+    term.fg(term::color::MAGENTA).unwrap();
+    println!("IT IS ESSENTIAL FOR NAM INSTALLATION!");
+    term.fg(term::color::RED).unwrap();
+    println!("DO NOT CLOSE THIS WINDOW!");
+    term.fg(term::color::MAGENTA).unwrap();
+    println!("IT IS ESSENTIAL FOR NAM INSTALLATION!");
+
     let mut config: Configuration = serde_json::from_str(CONFIG)?;
 
     let logfile = FileAppender::builder()
@@ -162,13 +176,24 @@ async fn main() -> anyhow::Result<()> {
 
     let file_list: Vec<String> = calculate_folders(&mut asset_iter.clone().to_vec());
 
-    let uuid = uuid::Uuid::new_v4().to_hyphenated();
+    let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
 
-    for folder in file_list.iter().filter(|f| f.ends_with("/")) {
+    for folder in file_list
+        .iter()
+        .filter(|f|
+            match std::path::PathBuf::from_str(f) {
+            Ok(a) => a.is_dir(),
+            Err(e) => {
+                info!("{}", e.to_string());
+                false
+            }
+        })
+    {
         std::fs::create_dir_all(format!("{}/{}", uuid, folder))?;
     }
 
     let folder_structure = [folder_structure(&format!("{}/", uuid))?].to_vec();
+
     let arc_folder_structure = std::sync::Arc::new(folder_structure.clone());
 
     let arc_asset_list: std::sync::Arc<InstallAssetList> = std::sync::Arc::new(asset_iter.clone());
@@ -598,21 +623,34 @@ async fn patch_exe_windows(path: String) -> Result<impl warp::Reply> {
     let resp: ExeResp = serde_json::from_str(&check_exe(path.clone())).unwrap();
     if resp.valid {
         let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
-        std::fs::write(format!("{}-4gb_patch.exe", uuid), FOUR_GB).expect("Unable to write file.");
+        let home = get_def_home().await?;
+        let file_path = format!("{}/Downloads/{}-4gb_patch.exe", home, uuid);
+        std::fs::write(&file_path, FOUR_GB).expect("Unable to write file.");
 
         let out = std::process::Command::new("powershell.exe")
-            .arg(format!("./{}-4gb_patch.exe", uuid))
+            .arg(&file_path)
             .arg(format!("'{}'", path))
             .output();
-        std::fs::remove_file(format!("{}-4gb_patch.exe", uuid)).expect("Unable to remove file.");
         match out {
-            Ok(_) => Ok({
+            Ok(_) => {
                 unsafe {
                     PATCHED_EXE = true;
                 };
-                serde_json::json!({ "patched" : true }).to_string()
-            }),
-            Err(_) => Ok(serde_json::json!({ "patched" : false }).to_string()),
+            }
+            Err(e) => {
+                info!("Couldn't run the 4gb patch exe: {}", e.to_string());
+            }
+        };
+        let out = std::process::Command::new("powershell.exe")
+            .arg("Remove-Item")
+            .arg(&file_path)
+            .output();
+        match out {
+            Ok(_) => Ok(serde_json::json!({ "patched" : true }).to_string()),
+            Err(e) => {
+                info!("Couldn't remove the 4gb patch exe: {}", e.to_string());
+                Ok(serde_json::json!({ "patched" : false }).to_string())
+            }
         }
     } else {
         Ok(serde_json::json!({ "patched" : false }).to_string())
@@ -690,7 +728,7 @@ async fn load_local_file(
         Some(file) => String::from_utf8_lossy(file.as_ref()).to_string(),
         None => {
             let unknown_file = name.replace(".txt", "");
-            println!("{:#?}", unknown_file);
+            info!("Unkown file: {:#?}", unknown_file);
 
             let possible_files = asset_list
                 .list

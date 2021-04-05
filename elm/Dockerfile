@@ -26,5 +26,6 @@ RUN yes | /elm/elm install elm/file
 RUN yes | /elm/elm install krisajenkins/remotedata
 RUN yes | /elm/elm install elm-community/list-extra
 RUN yes | /elm/elm install elm/bytes
+RUN yes | /elm/elm install s6o/elm-recase
 # this just keeps the container awake so we can run other commands in it!
 CMD ["sleep","1000"] 
