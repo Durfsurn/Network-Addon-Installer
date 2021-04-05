@@ -69,7 +69,7 @@ jobs:
     displayName: 'Embed .ico'
     inputs:
       targetType: 'inline'
-      script: '$(System.DefaultWorkingDirectory)/rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+      script: '$(System.DefaultWorkingDirectory)/rcedit.exe "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
 
   - task: Bash@3
     displayName: 'Rename executable'
@@ -179,7 +179,7 @@ jobs:
     displayName: 'Embed .ico'
     inputs:
       targetType: 'inline'
-      script: '$(System.DefaultWorkingDirectory)/rcedit "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
+      script: '$(System.DefaultWorkingDirectory)/rcedit.exe "target/release/network-addon-installer.exe" --set-icon "static/favicon.ico"'
 
   - task: Bash@3
     displayName: 'Rename executable'
