@@ -119,6 +119,15 @@ jobs:
         rm -rf installation/2\ Additional\ Network\ Features/RealHighway/
         ls -la installation
 
+  - task: ArchiveFiles@2
+    displayName: 'Create Zip Archive'
+    inputs:
+      rootFolderOrFile: '$(System.DefaultWorkingDirectory)/installation'
+      includeRootFolder: false
+      archiveType: 'zip'
+      archiveFile: '$(System.DefaultWorkingDirectory)/installation.zip'
+      replaceExistingArchive: true
+      
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:

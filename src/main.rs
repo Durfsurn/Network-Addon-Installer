@@ -13,6 +13,10 @@ use std::{env, str::FromStr};
 use walkdir::WalkDir;
 use warp::{http::Response, Filter};
 
+#[cfg(target_pointer_width = "32")]
+use std::io::{Cursor, Read};
+
+#[cfg(target_pointer_width = "64")]
 #[derive(RustEmbed)]
 #[folder = "installation/"]
 struct InstallAsset;
@@ -27,6 +31,8 @@ const FAVICON_ICO: &[u8] = include_bytes!("../static/favicon.ico");
 const CONFIG: &str = include_str!("../configuration.json");
 const FOUR_GB: &[u8] = include_bytes!("../static/4gb_patch.exe");
 const CLEANUP: &str = include_str!("../static/cleanup.txt");
+#[cfg(target_pointer_width = "32")]
+const WIN32_BIT_7Z: &[u8] = include_bytes!("../installation.zip");
 
 fn rust_version() -> String {
     env!("CARGO_PKG_VERSION").into()
@@ -110,22 +116,38 @@ impl InstallAssetList {
     }
 }
 #[cfg(target_pointer_width = "64")]
-fn get_install_asset_list() -> InstallAssetList {
-    InstallAssetList {
+async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
+    Ok(InstallAssetList {
         list: WalkDir::new("installation/")
             .into_iter()
             .map(|f| f.unwrap().path().to_string_lossy().to_string())
             .collect(),
-    }
+    })
 }
 
 #[cfg(target_pointer_width = "32")]
-fn get_install_asset_list() -> InstallAssetList {
+async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
+    let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
+    std::fs::create_dir_all(&format!("C:/temp/{}", uuid))?;
+
+    let reader = Cursor::new(WIN32_BIT_7Z.to_vec());
+
+    let mut zip = zip::ZipArchive::new(reader)?;
+
+    for index in 0..zip.len() {
+        let mut file = zip.by_index(index)?;
+        let name = file.name();
+        if name.ends_with('/') {
+            std::fs::create_dir_all(format!("C:/temp/{}/{}", uuid, &file.name()))?;
+        } else {
+            let mut output = std::fs::File::create(&format!("C:/temp/{}/{}", uuid, &file.name()))?;
+            std::io::copy(&mut file, &mut output)?;
+        }
+    }
     InstallAssetList {
-        list: WalkDir::new("installation/")
+        list: WalkDir::new(&format!("C:/temp/{}", uuid))
             .into_iter()
             .map(|f| f.unwrap().path().to_string_lossy().to_string())
-            .filter(|f| !f.contains("4GB_FULL"))
             .collect(),
     }
 }
@@ -163,7 +185,9 @@ async fn main() -> anyhow::Result<()> {
 
     config.windows = windows;
 
-    let asset_iter = get_install_asset_list();
+    println!("\nStarting to unzip files. Do not close this window.");
+    let asset_iter = get_install_asset_list().await?;
+    println!("Finished unzipping files. Do not close this window.\n");
 
     let file_list: Vec<String> = calculate_folders(&mut asset_iter.clone().to_vec());
 
