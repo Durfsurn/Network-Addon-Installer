@@ -113,9 +113,6 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls -la /usr/local/bin
-        ls -la /c/7zip/
-
         ls -la installation
         rm -rf installation/\$2\=z_NAM\ Controller_RHD_4GB_Full/
         rm -rf installation/\$3+z_NAM\ Controller_LHD_4GB_Full/
@@ -123,14 +120,14 @@ jobs:
         ls -la installation
         ls -la installation/2\ Additional\ Network\ Features
 
-  - task: ArchiveFiles@2
+  - task: PowerShell@2
     displayName: 'Create Zip Archive'
     inputs:
-      rootFolderOrFile: '$(System.DefaultWorkingDirectory)/installation'
-      includeRootFolder: false
-      archiveType: 'zip'
-      archiveFile: '$(System.DefaultWorkingDirectory)/installation.zip'
-      replaceExistingArchive: true
+      targetType: 'inline'
+      script: |
+        ls /
+        
+        ls /c/7zip
 
   - task: Bash@3
     displayName: 'Check zip size'
