@@ -125,8 +125,7 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls 'C:\Program Files (x86)\'
-        ls 'C:\Program Files\'
+        & 'C:\Program Files\7-Zip\7z.exe' a -tzip installation.zip installation
 
   - task: Bash@3
     displayName: 'Check zip size'
