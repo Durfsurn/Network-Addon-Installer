@@ -9,11 +9,11 @@ jobs:
   timeoutInMinutes: 360
   displayName: 'Build NAM Installer for 64bit Linux'
   steps:
-  - task: Cache@2
-    displayName: Cache target 
-    inputs:
-      key: 'linuxtarget | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
-      path: $(System.DefaultWorkingDirectory)/target
+  # - task: Cache@2
+  #   displayName: Cache target 
+  #   inputs:
+  #     key: 'linuxtarget | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
+  #     path: $(System.DefaultWorkingDirectory)/target
 
   - task: Bash@3
     displayName: 'Clone submodule'
