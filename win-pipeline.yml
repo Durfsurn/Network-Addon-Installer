@@ -127,7 +127,13 @@ jobs:
       archiveType: 'zip'
       archiveFile: '$(System.DefaultWorkingDirectory)/installation.zip'
       replaceExistingArchive: true
-      
+  - task: Bash@3
+    displayName: 'Check zip size'
+    inputs:
+      targetType: 'inline'
+      script: |
+        du -h installation.zip 
+        
   - task: Bash@3
     displayName: 'Set Toolchain'
     inputs:
