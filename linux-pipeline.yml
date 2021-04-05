@@ -6,6 +6,7 @@ pool:
 
 jobs: 
 - job:
+  timeoutInMinutes: 360
   displayName: 'Build NAM Installer for 64bit Linux'
   steps:
   - task: Cache@2

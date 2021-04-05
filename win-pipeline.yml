@@ -6,6 +6,7 @@ pool:
 
 jobs: 
 - job:
+  timeoutInMinutes: 360
   displayName: 'Build NAM Installer for 64bit Windows'
   steps:
   - task: Bash@3
@@ -90,6 +91,7 @@ jobs:
       publishLocation: 'Container'
 
 - job:
+  timeoutInMinutes: 360
   displayName: 'Build NAM Installer for 32bit Windows'
   steps:
   - task: Cache@2
