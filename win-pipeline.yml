@@ -125,9 +125,7 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls /
-        
-        ls /c/7zip
+        ls C:
 
   - task: Bash@3
     displayName: 'Check zip size'
