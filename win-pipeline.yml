@@ -113,7 +113,8 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls -la /
+        ls -la /usr/
+        ls -la /usr/bin
         env
 
         ls -la installation
