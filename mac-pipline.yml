@@ -10,9 +10,11 @@ jobs:
   steps:
   - task: Bash@3
     displayName: 'Clone submodule'
+    env: 
+      PASSWORD: $(PASSWORD)
     inputs:
       targetType: 'inline'
-      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
 
   - task: Bash@3
     displayName: 'Set Toolchain'
