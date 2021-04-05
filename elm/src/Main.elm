@@ -713,7 +713,7 @@ displayInstaller model =
     in
     div [ class "application-area" ]
         [ div [ style "padding" "15px" ]
-            [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ ReCase.recase ReCase.ToTitle model.flags.rust_version ++ " (" ++ model.flags.windows ++ ")" ]
+            [ h3 [ class "title is-3", style "margin-bottom" "0px" ] [ text <| "Network Addon Mod Installer v" ++ model.flags.rust_version ++ " (" ++ ReCase.recase ReCase.ToTitle model.flags.windows ++ ")" ]
             , br [] []
             , if String.contains "windows" model.flags.windows then
                 div []
