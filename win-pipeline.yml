@@ -9,13 +9,13 @@ jobs:
   timeoutInMinutes: 360
   displayName: 'Build NAM Installer for 64bit Windows'
   steps:
-  - task: Bash@3
-    displayName: 'Clone submodule'
-    env: 
-      PASSWORD: $(PASSWORD)
-    inputs:
-      targetType: 'inline'
-      script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
+  # - task: Bash@3
+  #   displayName: 'Clone submodule'
+  #   env: 
+  #     PASSWORD: $(PASSWORD)
+  #   inputs:
+  #     targetType: 'inline'
+  #     script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
       
   - task: Cache@2
     displayName: Cache target 
@@ -100,20 +100,20 @@ jobs:
       key: 'win32target | "$(Agent.OS)" | $(System.DefaultWorkingDirectory)/Cargo.lock'
       path: $(System.DefaultWorkingDirectory)/target
 
-  - task: Bash@3
-    displayName: 'Clone submodule'
-    env: 
-      PASSWORD: $(PASSWORD)
-    inputs:
-      targetType: 'inline'
-      script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
+  # - task: Bash@3
+  #   displayName: 'Clone submodule'
+  #   env: 
+  #     PASSWORD: $(PASSWORD)
+  #   inputs:
+  #     targetType: 'inline'
+  #     script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
       
   - task: Bash@3
     displayName: 'Remove 64bit NAM folders'
     inputs:
       targetType: 'inline'
       script: |
-        find / -name 7za.exe
+        ls -la /
 
         ls -la installation
         rm -rf installation/\$2\=z_NAM\ Controller_RHD_4GB_Full/
