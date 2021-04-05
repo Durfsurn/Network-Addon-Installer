@@ -99,8 +99,9 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        'rm -rf installation/$2=z_NAM Controller_RHD_4GB_Full'
-        'rm -rf installation/$3+z_NAM Controller_LHD_4GB_Full'
+        ls -la installation
+        rm -rf installation/$2=z_NAM Controller_RHD_4GB_Full
+        rm -rf installation/$3+z_NAM Controller_LHD_4GB_Full
 
   - task: Bash@3
     displayName: 'Set Toolchain'
