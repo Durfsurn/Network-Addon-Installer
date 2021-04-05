@@ -94,13 +94,15 @@ jobs:
       PathtoPublish: '$(Build.ArtifactStagingDirectory)'
       ArtifactName: 'Linux'
       publishLocation: 'Container'
-      
+
   - task: Bash@3
     condition: always() 
     displayName: 'Clean folder'
     inputs:
       targetType: 'inline'
-      script: 'rm -rf .'
+      script: |
+        cd ../
+        rm -rf $(System.DefaultWorkingDirectory)
 # - job:
 #   displayName: 'Build NAM Installer for 32bit Linux'
 #   steps:
