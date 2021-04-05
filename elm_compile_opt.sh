@@ -2,7 +2,7 @@
 docker build --tag elm-builder elm
 docker run --rm -d --name elmb elm-builder 
 docker cp $PWD/elm/src elmb:/workdir
-docker exec -i elmb /elm/elm make --optimize --output=src/main.js src/Main.elm
+docker exec -i elmb /elm/elm make --output=src/main.js src/Main.elm #--optimize 
 docker cp elmb:/workdir/elm.json $PWD/elm
 docker cp elmb:/workdir/src/main.js $PWD/static
 docker rm -f elmb

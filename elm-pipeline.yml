@@ -12,17 +12,19 @@ jobs:
   steps:
   - task: Bash@3
     displayName: 'Clone submodule'
+    env: 
+      PASSWORD: $(PASSWORD)
     inputs:
       targetType: 'inline'
-      script: 'git clone https://github.com/Durfsurn/Installer-Assets.git installation'
+      script: 'git clone https://durfsurn:$(PASSWORD)@github.com/Durfsurn/Installer-Assets.git installation'
   
   - task: Bash@3
     displayName: 'Build Elm'
     inputs:
       targetType: 'inline'
       script: |
-          chmod +x elm_compile.sh
-          ./elm_compile.sh
+          chmod +x elm_compile_opt.sh
+          ./elm_compile_opt.sh
 
   - task: CopyFiles@2
     inputs:
