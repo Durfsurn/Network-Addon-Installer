@@ -37,13 +37,31 @@
             /* Non-prefixed version, currently supported by Chrome and Opera */
         }
 
-        .button.invisible, .button.invisible:hover, .button.invisible:active, .button.invisible:focus {
+        .button.invisible:hover,
+        .button.invisible:active,
+        .button.invisible:focus {
             border-color: transparent;
         }
+
+        .button.invisible:hover+not(.no-text),
+        .button.invisible:active+not(.no-text),
+        .button.invisible:focus+not(.no-text) {
+            border-color: gray;
+        }
+
+        .button.invisible {
+            border-color: transparent;
+        }
+        }
+
+        .button.invisible+not(.no-text) {
+            border-color: lightgray;
+        }
+
         .button.invisible.no-text {
             color: transparent;
         }
-        
+
         html {
             overflow-y: hidden !important;
         }

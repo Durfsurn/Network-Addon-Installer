@@ -1,22 +1,18 @@
 use anyhow::anyhow;
-use log::{debug, error, info, warn};
-use percent_encoding;
-use serde::{Deserialize, Serialize};
-use warp::{http::Response, Filter};
-
-#[cfg(target_pointer_width = "64")]
-use rust_embed::RustEmbed;
-
 use log::LevelFilter;
+use log::{debug, error, info, warn};
 use log4rs::append::file::FileAppender;
 use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use os_info;
+use percent_encoding;
+use rust_embed::RustEmbed;
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{env, str::FromStr};
 use walkdir::WalkDir;
+use warp::{http::Response, Filter};
 
-#[cfg(target_pointer_width = "64")]
 #[derive(RustEmbed)]
 #[folder = "installation/"]
 struct InstallAsset;
@@ -84,13 +80,8 @@ struct InstallAssetList {
     list: Vec<String>,
 }
 impl InstallAssetList {
-    #[cfg(target_pointer_width = "64")]
     fn get_file(&self, f: &str) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
         InstallAsset::get(f)
-    }
-    #[cfg(target_pointer_width = "32")]
-    fn get_file(&self, f: &str) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
-        Some(std::fs::read(f).unwrap().into())
     }
 
     fn to_vec(self) -> Vec<String> {
@@ -180,8 +171,7 @@ async fn main() -> anyhow::Result<()> {
 
     for folder in file_list
         .iter()
-        .filter(|f|
-            match std::path::PathBuf::from_str(f) {
+        .filter(|f| match std::path::PathBuf::from_str(f) {
             Ok(a) => a.is_dir(),
             Err(e) => {
                 info!("{}", e.to_string());
@@ -307,7 +297,9 @@ async fn main() -> anyhow::Result<()> {
     );
     let port: u16 = config.clone().web_server_port;
 
-    webbrowser::open(&format!("http://127.0.0.1:{}", port.to_owned()))?;
+    if !cfg!(debug_assertions) {
+        webbrowser::open(&format!("http://127.0.0.1:{}", port.to_owned()))?;
+    };
 
     warp::serve(all_routes)
         .run(([0, 0, 0, 0], port.to_owned()))
@@ -717,41 +709,39 @@ async fn load_local_file(
     let name = percent_encoding::percent_decode_str(&file_name)
         .decode_utf8_lossy()
         .to_string();
-    let name = if name.starts_with("/") {
-        name[1..].to_string()
+    let folder = name.replace("installation/", "");
+
+    if folder == "installation" || folder == "/Network Addon Mod" {
+        Ok(match asset_list.get_file("Main.txt") {
+            Some(a) => String::from_utf8_lossy(&a).to_string(),
+            _ => "".to_string(),
+        })
     } else {
-        name
-    };
-    let name = format!("{}.txt", name).replace("installation/", "");
+        let list = asset_list.clone();
+        let files: Vec<&String> = list
+            .list
+            .iter()
+            .filter(|f| f.clone().contains(&folder))
+            .filter(|f| {
+                let s = f.clone();
+                let idx = s.rfind(&folder).unwrap();
+                let count = s[idx..].matches("\\").count();
+                count < 2
+            })
+            .filter(|f| f.contains("txt"))
+            .collect();
 
-    let f = match asset_list.get_file(&name) {
-        Some(file) => String::from_utf8_lossy(file.as_ref()).to_string(),
-        None => {
-            let unknown_file = name.replace(".txt", "");
-            info!("Unkown file: {:#?}", unknown_file);
+        let mut texts = Vec::new();
+        for file in files {
+            let file = file.replace("installation/", "").replace("\\", "/");
 
-            let possible_files = asset_list
-                .list
-                .iter()
-                .map(|f| f.to_owned())
-                .filter(|f| f.contains(&unknown_file))
-                .collect::<Vec<String>>();
-            if possible_files.len() == 0 {
-                warn!("No files found in: {}", &unknown_file);
-                "".to_string()
-            } else {
-                match asset_list.get_file(&possible_files[0].as_str()) {
-                    Some(txt) => String::from_utf8_lossy(txt.as_ref()).to_string(),
-                    None => {
-                        warn!("Unable to retrieve files in folder: {}", &unknown_file);
-                        "".to_string()
-                    }
-                }
-            }
+            texts.push(match asset_list.get_file(&file) {
+                Some(a) => String::from_utf8_lossy(&a).to_string(),
+                _ => "".to_string(),
+            })
         }
-    };
-
-    Ok(f)
+        Ok(texts.join("\n"))
+    }
 }
 async fn load_local_image(
     (file_name, asset_list): (String, std::sync::Arc<InstallAssetList>),
@@ -759,40 +749,50 @@ async fn load_local_image(
     let name = percent_encoding::percent_decode_str(&file_name)
         .decode_utf8_lossy()
         .to_string();
-    let name = if name.starts_with("/") {
-        name[1..].to_string()
+    let folder = name.replace("installation/", "");
+
+    if folder == "installation" || folder == "/Network Addon Mod" {
+        let resp = asset_list
+            .get_file("Network Addon Mod.png")
+            .unwrap()
+            .to_vec();
+        Ok(resp)
     } else {
-        name
-    };
-    let name = format!("{}.png", name).replace("installation/", "");
+        let list = asset_list.clone();
+        let files: Vec<&String> = list
+            .list
+            .iter()
+            .filter(|f| f.clone().contains(&folder))
+            .filter(|f| {
+                let s = f.clone();
+                let idx = s.rfind(&folder).unwrap();
+                let count = s[idx..].matches("\\").count();
+                count < 2
+            })
+            .filter(|f| f.contains("png"))
+            .collect();
 
-    let f = match asset_list.get_file(&name) {
-        Some(file) => Ok(file),
-        None => {
-            let unknown_file = name.replace(".png", "");
-            let possible_files = asset_list
-                .list
-                .iter()
-                .map(|f| f.to_owned())
-                .filter(|f| f.contains(&unknown_file))
-                .collect::<Vec<String>>();
-            if possible_files.len() == 0 {
-                Err(Error::Custom("No files found".to_string()))
-            } else {
-                let full_docs = possible_files.join("\n");
-                match asset_list.get_file(full_docs.as_str()) {
-                    Some(img) => Ok(img),
-                    None => Err(Error::Custom(format!(
-                        "Unable to retrieve any images in folder: {}",
-                        &unknown_file
-                    ))),
+        let mut images = Vec::new();
+        for file in files {
+            let file = file.replace("installation/", "").replace("\\", "/");
+
+            images.push(
+                match asset_list.get_file(&file) {
+                    Some(img) => img,
+                    None => asset_list.get_file("Network Addon Mod.png").unwrap(),
                 }
-            }
+                .to_vec(),
+            )
         }
-    }?;
-
-    let bytes_f: Vec<u8> = (f.clone()).into();
-    Ok(bytes_f)
+        let resp = &match images.get(0) {
+            Some(a) => a.to_owned(),
+            _ => asset_list
+                .get_file("Network Addon Mod.png")
+                .unwrap()
+                .to_vec(),
+        };
+        Ok(resp.clone())
+    }
 }
 
 async fn load_static(file_name: String) -> Result<impl warp::Reply> {
