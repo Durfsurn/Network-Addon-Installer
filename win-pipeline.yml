@@ -125,7 +125,8 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls C:
+        ls 'C:\Program Files (x86)\'
+        ls 'C:\Program Files\'
 
   - task: Bash@3
     displayName: 'Check zip size'
