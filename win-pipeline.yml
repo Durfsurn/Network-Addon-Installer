@@ -113,9 +113,8 @@ jobs:
     inputs:
       targetType: 'inline'
       script: |
-        ls -la /usr/
-        ls -la /usr/bin
-        env
+        ls -la /usr/local/bin
+        ls -la /c/7zip/
 
         ls -la installation
         rm -rf installation/\$2\=z_NAM\ Controller_RHD_4GB_Full/
