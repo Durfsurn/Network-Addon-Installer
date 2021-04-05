@@ -6,7 +6,6 @@ use log4rs::config::{Appender, Config, Root};
 use log4rs::encode::pattern::PatternEncoder;
 use os_info;
 use percent_encoding;
-use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::{env, str::FromStr};
@@ -15,6 +14,9 @@ use warp::{http::Response, Filter};
 
 #[cfg(target_pointer_width = "32")]
 use std::io::{Cursor, Read};
+
+#[cfg(target_pointer_width = "64")]
+use rust_embed::RustEmbed;
 
 #[cfg(target_pointer_width = "64")]
 #[derive(RustEmbed)]
@@ -31,8 +33,6 @@ const FAVICON_ICO: &[u8] = include_bytes!("../static/favicon.ico");
 const CONFIG: &str = include_str!("../configuration.json");
 const FOUR_GB: &[u8] = include_bytes!("../static/4gb_patch.exe");
 const CLEANUP: &str = include_str!("../static/cleanup.txt");
-#[cfg(target_pointer_width = "32")]
-const WIN32_BIT_7Z: &[u8] = include_bytes!("../installation.zip");
 
 fn rust_version() -> String {
     env!("CARGO_PKG_VERSION").into()
@@ -86,8 +86,21 @@ struct InstallAssetList {
     list: Vec<String>,
 }
 impl InstallAssetList {
-    fn get_file(&self, f: &str) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
+    #[cfg(target_pointer_width = "64")]
+    fn get_file(&self, f: &str, _: std::sync::Arc<String>) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
         InstallAsset::get(f)
+    }
+    #[cfg(target_pointer_width = "32")]
+    fn get_file(
+        &self,
+        f: &str,
+        uuid: std::sync::Arc<String>,
+    ) -> std::option::Option<std::borrow::Cow<'static, [u8]>> {
+        Some(
+            std::fs::read(&format!("C:/temp/{}/{}", uuid.to_string(), f))
+                .unwrap()
+                .into(),
+        )
     }
 
     fn to_vec(self) -> Vec<String> {
@@ -116,7 +129,7 @@ impl InstallAssetList {
     }
 }
 #[cfg(target_pointer_width = "64")]
-async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
+async fn get_install_asset_list(_: String) -> anyhow::Result<InstallAssetList> {
     Ok(InstallAssetList {
         list: WalkDir::new("installation/")
             .into_iter()
@@ -126,13 +139,12 @@ async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
 }
 
 #[cfg(target_pointer_width = "32")]
-async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
-    let uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
+async fn get_install_asset_list(uuid: String) -> anyhow::Result<InstallAssetList> {
     std::fs::create_dir_all(&format!("C:/temp/{}", uuid))?;
 
-    let reader = Cursor::new(WIN32_BIT_7Z.to_vec());
+    let file = std::fs::File::open("data.bin")?;
 
-    let mut zip = zip::ZipArchive::new(reader)?;
+    let mut zip = zip::ZipArchive::new(file)?;
 
     for index in 0..zip.len() {
         let mut file = zip.by_index(index)?;
@@ -144,16 +156,19 @@ async fn get_install_asset_list() -> anyhow::Result<InstallAssetList> {
             std::io::copy(&mut file, &mut output)?;
         }
     }
-    InstallAssetList {
+    Ok(InstallAssetList {
         list: WalkDir::new(&format!("C:/temp/{}", uuid))
             .into_iter()
             .map(|f| f.unwrap().path().to_string_lossy().to_string())
             .collect(),
-    }
+    })
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    #[cfg(target_pointer_width = "32")]
+    assert_eq!(true, std::path::Path::new("data.bin").exists());
+
     let mut term = term::stdout().unwrap();
     term.fg(term::color::RED).unwrap();
     println!("DO NOT CLOSE THIS WINDOW!");
@@ -186,7 +201,8 @@ async fn main() -> anyhow::Result<()> {
     config.windows = windows;
 
     println!("\nStarting to unzip files. Do not close this window.");
-    let asset_iter = get_install_asset_list().await?;
+    let temp_folder_uuid = uuid::Uuid::new_v4().to_hyphenated().to_string()[0..8].to_string();
+    let asset_iter = get_install_asset_list(temp_folder_uuid.clone()).await?;
     println!("Finished unzipping files. Do not close this window.\n");
 
     let file_list: Vec<String> = calculate_folders(&mut asset_iter.clone().to_vec());
@@ -210,6 +226,10 @@ async fn main() -> anyhow::Result<()> {
 
     let arc_folder_structure = std::sync::Arc::new(folder_structure.clone());
 
+    let arc_temp_folder_uuid: std::sync::Arc<String> =
+        std::sync::Arc::new(temp_folder_uuid.clone());
+    let arc_temp_folder_uuid_2: std::sync::Arc<String> =
+        std::sync::Arc::new(temp_folder_uuid.clone());
     let arc_asset_list: std::sync::Arc<InstallAssetList> = std::sync::Arc::new(asset_iter.clone());
 
     let arc_docs_list: std::sync::Arc<InstallAssetList> =
@@ -239,7 +259,13 @@ async fn main() -> anyhow::Result<()> {
 
     let get_docs = warp::get()
         .and(warp::path!("docs" / String))
-        .map(move |path: String| (path.clone(), arc_docs_list.clone()))
+        .map(move |path: String| {
+            (
+                path.clone(),
+                arc_docs_list.clone(),
+                arc_temp_folder_uuid.clone(),
+            )
+        })
         .and_then(load_local_file)
         .boxed();
 
@@ -265,7 +291,13 @@ async fn main() -> anyhow::Result<()> {
 
     let get_images = warp::get()
         .and(warp::path!("images" / String))
-        .map(move |path: String| (path.clone(), arc_images_list.clone()))
+        .map(move |path: String| {
+            (
+                path.clone(),
+                arc_images_list.clone(),
+                arc_temp_folder_uuid_2.clone(),
+            )
+        })
         .and_then(load_local_image)
         .boxed();
 
@@ -728,7 +760,11 @@ async fn load_install_status() -> Result<impl warp::Reply> {
 }
 
 async fn load_local_file(
-    (file_name, asset_list): (String, std::sync::Arc<InstallAssetList>),
+    (file_name, asset_list, temp_folder_uuid): (
+        String,
+        std::sync::Arc<InstallAssetList>,
+        std::sync::Arc<String>,
+    ),
 ) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name)
         .decode_utf8_lossy()
@@ -736,10 +772,12 @@ async fn load_local_file(
     let folder = name.replace("installation/", "");
 
     if folder == "installation" || folder == "/Network Addon Mod" {
-        Ok(match asset_list.get_file("Main.txt") {
-            Some(a) => String::from_utf8_lossy(&a).to_string(),
-            _ => "".to_string(),
-        })
+        Ok(
+            match asset_list.get_file("Main.txt", temp_folder_uuid.clone()) {
+                Some(a) => String::from_utf8_lossy(&a).to_string(),
+                _ => "".to_string(),
+            },
+        )
     } else {
         let list = asset_list.clone();
         let files: Vec<&String> = list
@@ -759,7 +797,7 @@ async fn load_local_file(
         for file in files {
             let file = file.replace("installation/", "").replace("\\", "/");
 
-            texts.push(match asset_list.get_file(&file) {
+            texts.push(match asset_list.get_file(&file, temp_folder_uuid.clone()) {
                 Some(a) => String::from_utf8_lossy(&a).to_string(),
                 _ => "".to_string(),
             })
@@ -768,7 +806,11 @@ async fn load_local_file(
     }
 }
 async fn load_local_image(
-    (file_name, asset_list): (String, std::sync::Arc<InstallAssetList>),
+    (file_name, asset_list, temp_folder_uuid): (
+        String,
+        std::sync::Arc<InstallAssetList>,
+        std::sync::Arc<String>,
+    ),
 ) -> Result<impl warp::Reply> {
     let name = percent_encoding::percent_decode_str(&file_name)
         .decode_utf8_lossy()
@@ -777,7 +819,7 @@ async fn load_local_image(
 
     if folder == "installation" || folder == "/Network Addon Mod" {
         let resp = asset_list
-            .get_file("Network Addon Mod.png")
+            .get_file("Network Addon Mod.png", temp_folder_uuid.clone())
             .unwrap()
             .to_vec();
         Ok(resp)
@@ -801,9 +843,11 @@ async fn load_local_image(
             let file = file.replace("installation/", "").replace("\\", "/");
 
             images.push(
-                match asset_list.get_file(&file) {
+                match asset_list.get_file(&file, temp_folder_uuid.clone()) {
                     Some(img) => img,
-                    None => asset_list.get_file("Network Addon Mod.png").unwrap(),
+                    None => asset_list
+                        .get_file("Network Addon Mod.png", temp_folder_uuid.clone())
+                        .unwrap(),
                 }
                 .to_vec(),
             )
@@ -811,7 +855,7 @@ async fn load_local_image(
         let resp = &match images.get(0) {
             Some(a) => a.to_owned(),
             _ => asset_list
-                .get_file("Network Addon Mod.png")
+                .get_file("Network Addon Mod.png", temp_folder_uuid)
                 .unwrap()
                 .to_vec(),
         };

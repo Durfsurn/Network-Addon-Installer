@@ -118,6 +118,7 @@ jobs:
         rm -rf installation/\$3+z_NAM\ Controller_LHD_4GB_Full/
         rm -rf installation/2\ Additional\ Network\ Features/RealHighway/
         ls -la installation
+        ls -la installation/2\ Additional\ Network\ Features
 
   - task: ArchiveFiles@2
     displayName: 'Create Zip Archive'
@@ -127,12 +128,14 @@ jobs:
       archiveType: 'zip'
       archiveFile: '$(System.DefaultWorkingDirectory)/installation.zip'
       replaceExistingArchive: true
+
   - task: Bash@3
     displayName: 'Check zip size'
     inputs:
       targetType: 'inline'
       script: |
         du -h installation.zip 
+        mv installation.zip data.bin
         
   - task: Bash@3
     displayName: 'Set Toolchain'
