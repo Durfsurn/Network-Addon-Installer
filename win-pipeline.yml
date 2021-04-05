@@ -112,9 +112,9 @@ jobs:
       targetType: 'inline'
       script: |
         ls -la installation
-        rm -rf installation/$2=z_NAM Controller_RHD_4GB_Full
-        rm -rf installation/$3+z_NAM Controller_LHD_4GB_Full
-        rm -rf installation/2 Additional Network Features\RealHighway
+        rm -rf installation/\$2\=z_NAM\ Controller_RHD_4GB_Full/
+        rm -rf installation/\$3+z_NAM\ Controller_LHD_4GB_Full/
+        rm -rf installation/2\ Additional\ Network\ Features/RealHighway/
         ls -la installation
 
   - task: Bash@3
