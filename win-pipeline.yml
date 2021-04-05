@@ -114,7 +114,7 @@ jobs:
       targetType: 'inline'
       script: |
         & 'C:\Program Files\7-Zip\7z.exe' a -tzip installation.zip installation
-        ls -la
+        ls
 
   - task: Bash@3
     displayName: 'Remove 64bit NAM folders'
