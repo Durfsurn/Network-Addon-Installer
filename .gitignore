@@ -1,10 +1,4 @@
 /target
-elm/elm-stuff/**
-test
-Plugins_bak
-Plugins
-*.log
-old_installation
-network-addon-installer.exe
-installation.zip
+*.exe
+installation
 data.bin

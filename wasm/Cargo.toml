@@ -1,0 +1,27 @@
+[package]
+name = "wasm"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde = { version = "*", features = ["derive"] }
+chrono = { version = "*", features = ["serde"] }
+dominator = "*"
+wasm-bindgen = "0.2.79"
+wasm-bindgen-futures = "0.4.29"
+web-sys = { version = "0.3.56", features = [
+    "HtmlInputElement",
+    "HtmlSelectElement",
+    "HtmlSpanElement",
+    "HtmlButtonElement",
+    "HtmlCanvasElement",
+] }
+js-sys = "0.3.56"
+
+
+utils = { path = "../utils" }
+
+[lib]
+crate-type = ["cdylib"]
